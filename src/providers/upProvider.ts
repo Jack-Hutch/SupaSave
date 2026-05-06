@@ -208,6 +208,10 @@ export class UpProvider implements BankProviderInstance {
       last_sync_at: new Date().toISOString(),
       status: 'connected',
       updated_at: new Date().toISOString(),
+      // Store token in payload so it can be restored after page refresh.
+      // This is intentional: each user stores their own token against their
+      // own row in bank_connections (protected by Supabase RLS).
+      payload: { upToken: token },
     };
   }
 

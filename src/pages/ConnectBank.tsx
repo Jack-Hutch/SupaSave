@@ -17,7 +17,9 @@ import type { BankProvider } from '../types';
 // ─── Env token detection ──────────────────────────────────────────────────────
 // If VITE_UP_API_TOKEN is set and valid we can skip the manual entry form
 // entirely — the Up provider reads it automatically via getUpToken().
+// Only skip the form in local dev — in production every user enters their own token.
 const ENV_UP_TOKEN_READY =
+  import.meta.env.DEV &&
   !!import.meta.env.VITE_UP_API_TOKEN &&
   validateUpToken(import.meta.env.VITE_UP_API_TOKEN);
 

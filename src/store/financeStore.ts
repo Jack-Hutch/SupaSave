@@ -211,6 +211,17 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
         }).catch((e) => console.warn('Could not upsert default profile:', e));
       }
 
+      // Restore Up Bank token from the persisted payload so the user doesn't
+      // have to re-enter it after a page refresh.
+      if (bankConnection?.provider === 'up' && bankConnection.payload?.upToken) {
+        const { setUpToken } = await import('../lib/upTokenSession');
+        try {
+          setUpToken(bankConnection.payload.upToken as string);
+        } catch {
+          // Invalid stored token — silently ignore; user will be prompted to reconnect
+        }
+      }
+
       set({
         accounts,
         transactions,
