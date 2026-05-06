@@ -1,716 +1,1016 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  ElementType,
+  SVGProps,
+  ReactNode,
+} from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useScroll, useTransform, useInView, AnimatePresence } from 'framer-motion';
-import {
-  Zap, BarChart3, CreditCard, Bell, Shield, Smartphone,
-  ArrowRight, Download, ChevronDown, TrendingUp, TrendingDown,
-  Wallet, RefreshCw, Check, Star,
-} from 'lucide-react';
+import './landing.css';
 
-// ─── PWA Install hook ────────────────────────────────────────────────────────
-function useInstallPrompt() {
-  const [prompt, setPrompt] = useState<Event & { prompt: () => Promise<void> } | null>(null);
-  const [installed, setInstalled] = useState(false);
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setPrompt(e as Event & { prompt: () => Promise<void> });
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    window.addEventListener('appinstalled', () => setInstalled(true));
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const install = async () => {
-    if (!prompt) return;
-    await prompt.prompt();
-    setPrompt(null);
-  };
-
-  return { canInstall: !!prompt, install, installed };
+interface RevealOptions {
+  threshold?: number;
+  rootMargin?: string;
 }
 
-// ─── Animated counter ────────────────────────────────────────────────────────
-function Counter({ to, suffix = '', prefix = '' }: { to: number; suffix?: string; prefix?: string }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true });
+type IconProps = SVGProps<SVGSVGElement> & { className?: string };
 
-  useEffect(() => {
-    if (!inView) return;
-    let start = 0;
-    const duration = 1800;
-    const step = (timestamp: number) => {
-      if (!start) start = timestamp;
-      const progress = Math.min((timestamp - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.floor(eased * to));
-      if (progress < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [inView, to]);
-
-  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
+interface BarData {
+  label: string;
+  amt: number;
+  pct: number;
+  color: string;
 }
 
-// ─── Floating orb ────────────────────────────────────────────────────────────
-function Orb({ x, y, size, color, delay }: { x: string; y: string; size: number; color: string; delay: number }) {
+interface Platform {
+  Icon: React.FC<IconProps>;
+  name: string;
+  steps: string[];
+}
+
+interface InstallEvent extends Event {
+  prompt: () => void;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+// ─── Hooks ───────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function useReveal(opts: RevealOptions = {}): [React.RefObject<any>, boolean] {
+  const ref = useRef<any>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (!ref.current) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) { setSeen(true); io.disconnect(); }
+      },
+      { threshold: opts.threshold ?? 0.15, rootMargin: opts.rootMargin ?? '0px' },
+    );
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return [ref, seen];
+}
+
+// ─── CountUp ─────────────────────────────────────────────────────────────────
+
+interface CountUpProps {
+  value: number;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+  className?: string;
+}
+
+function CountUp({ value, prefix = '', suffix = '', decimals = 0, className = '' }: CountUpProps) {
+  const [ref, seen] = useReveal();
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!seen) return;
+    const start = performance.now();
+    const dur = 1600;
+    let raf: number;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      setN(value * eased);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [seen, value]);
+  const fmt = decimals
+    ? n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    : Math.round(n).toLocaleString();
   return (
-    <motion.div
-      className="absolute rounded-full pointer-events-none"
-      style={{ left: x, top: y, width: size, height: size, background: color, filter: 'blur(80px)', opacity: 0.18 }}
-      animate={{ x: [0, 30, -20, 0], y: [0, -25, 20, 0], scale: [1, 1.1, 0.95, 1] }}
-      transition={{ duration: 12 + delay, repeat: Infinity, ease: 'easeInOut', delay }}
-    />
+    <span ref={ref} className={className}>
+      {prefix}{fmt}{suffix}
+    </span>
   );
 }
 
-// ─── Animated transaction row ────────────────────────────────────────────────
-function TxRow({ icon, name, category, amount, type, delay }: {
-  icon: string; name: string; category: string; amount: string; type: 'income' | 'expense'; delay: number;
-}) {
+// ─── Logo ─────────────────────────────────────────────────────────────────────
+
+function Logo({ size = 32 }: { size?: number }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -16 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay, duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-      className="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0"
-    >
-      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-base shrink-0">{icon}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-gray-200 truncate">{name}</p>
-        <p className="text-[10px] text-gray-500">{category}</p>
+    <div className="flex items-center gap-2.5">
+      <div
+        className="grad-bg rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30"
+        style={{ width: size, height: size, fontSize: size * 0.55 }}
+      >
+        S
       </div>
-      <span className={`text-xs font-semibold font-mono ${type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
-        {type === 'income' ? '+' : '-'}{amount}
+      <span className="text-white font-semibold tracking-tight" style={{ fontSize: size * 0.6 }}>
+        Supa<span className="text-emerald-400">Save</span>
       </span>
-    </motion.div>
+    </div>
   );
 }
 
-// ─── Feature card ────────────────────────────────────────────────────────────
-function FeatureCard({ icon: Icon, title, desc, gradient, delay }: {
-  icon: React.FC<{ className?: string }>; title: string; desc: string; gradient: string; delay: number;
-}) {
-  const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 32 }}
-      animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.5, delay, ease: [0.32, 0.72, 0, 1] }}
-      whileHover={{ y: -6, transition: { duration: 0.2 } }}
-      className="relative rounded-2xl border border-white/8 bg-white/3 p-5 overflow-hidden cursor-default group"
-    >
-      <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${gradient}`} />
-      <div className="relative z-10">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/15 border border-indigo-500/20 mb-4">
-          <Icon className="h-5 w-5 text-indigo-400" />
-        </div>
-        <h3 className="text-sm font-semibold text-gray-100 mb-1.5">{title}</h3>
-        <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
-      </div>
-    </motion.div>
+// ─── Background FX ───────────────────────────────────────────────────────────
+
+function BackgroundFX() {
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 36 }, () => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        delay: Math.random() * 6,
+        duration: 6 + Math.random() * 8,
+        size: 1 + Math.random() * 2.5,
+      })),
+    [],
   );
-}
-
-// ─── App mockup ──────────────────────────────────────────────────────────────
-function AppMockup() {
-  const transactions = [
-    { icon: '🛒', name: 'Woolworths', category: 'Groceries', amount: '$64.20', type: 'expense' as const },
-    { icon: '☕', name: 'Seven Seeds', category: 'Dining', amount: '$6.50', type: 'expense' as const },
-    { icon: '💼', name: 'Salary', category: 'Income', amount: '$2,450.00', type: 'income' as const },
-    { icon: '🎵', name: 'Spotify', category: 'Entertainment', amount: '$11.99', type: 'expense' as const },
-    { icon: '⛽', name: 'BP Fuel', category: 'Transport', amount: '$89.40', type: 'expense' as const },
-  ];
-
-  return (
-    <motion.div
-      animate={{ y: [0, -12, 0] }}
-      transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-      className="relative w-[320px] shrink-0"
-    >
-      {/* Glow behind mockup */}
-      <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-3xl scale-110" />
-
-      {/* Phone frame */}
-      <div className="relative rounded-3xl border border-white/12 bg-gray-950/95 overflow-hidden shadow-2xl shadow-black/60 backdrop-blur-sm">
-        {/* Status bar */}
-        <div className="flex items-center justify-between px-5 pt-3 pb-1">
-          <span className="text-[10px] text-gray-500 font-mono">9:41</span>
-          <div className="flex gap-1">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className={`w-1 rounded-full bg-gray-400 ${i === 3 ? 'h-3' : i === 2 ? 'h-2.5' : i === 1 ? 'h-2' : 'h-1.5'}`} />
-            ))}
-          </div>
-        </div>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <div>
-            <p className="text-[10px] text-gray-500">Total Balance</p>
-            <motion.p
-              className="text-xl font-bold font-mono text-gray-100"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
-            >
-              $12,483.50
-            </motion.p>
-          </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 border border-indigo-500/30">
-            <Zap className="h-4 w-4 text-indigo-400" />
-          </div>
-        </div>
-
-        {/* Mini chart */}
-        <div className="px-4 py-3">
-          <svg viewBox="0 0 280 50" className="w-full">
-            <defs>
-              <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <motion.path
-              d="M0,40 C30,35 60,20 90,25 C120,30 150,10 180,15 C210,20 240,5 280,8 L280,50 L0,50 Z"
-              fill="url(#chartGrad)"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8, duration: 0.6 }}
-            />
-            <motion.path
-              d="M0,40 C30,35 60,20 90,25 C120,30 150,10 180,15 C210,20 240,5 280,8"
-              fill="none"
-              stroke="#6366f1"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ delay: 0.5, duration: 1.2, ease: 'easeOut' }}
-            />
-          </svg>
-        </div>
-
-        {/* Transactions */}
-        <div className="px-4 pb-4">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Recent</p>
-          {transactions.map((tx, i) => (
-            <TxRow key={tx.name} {...tx} delay={0.8 + i * 0.1} />
-          ))}
-        </div>
-      </div>
-
-      {/* Floating badges */}
-      <motion.div
-        className="absolute -right-10 top-16 rounded-2xl border border-emerald-500/20 bg-gray-950/90 px-3 py-2 backdrop-blur shadow-xl"
-        animate={{ x: [0, 6, 0], rotate: [0, 1, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-      >
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-          <span className="text-xs font-semibold text-emerald-400">+14.2%</span>
-        </div>
-        <p className="text-[9px] text-gray-500 mt-0.5">vs last month</p>
-      </motion.div>
-
-      <motion.div
-        className="absolute -left-10 bottom-20 rounded-2xl border border-indigo-500/20 bg-gray-950/90 px-3 py-2 backdrop-blur shadow-xl"
-        animate={{ x: [0, -6, 0], rotate: [0, -1, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-      >
-        <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse" />
-          <span className="text-[10px] text-gray-300">Up Bank synced</span>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ─── Particle field ───────────────────────────────────────────────────────────
-function Particles() {
-  const particles = Array.from({ length: 40 }, (_, i) => ({
-    id: i,
-    x: `${Math.random() * 100}%`,
-    y: `${Math.random() * 100}%`,
-    size: Math.random() * 2 + 1,
-    delay: Math.random() * 8,
-    duration: 6 + Math.random() * 6,
-  }));
-
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {particles.map((p) => (
-        <motion.div
-          key={p.id}
+      <div className="absolute inset-0 grid-overlay opacity-60" />
+      <div
+        className="anim-orb-a absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(99,102,241,.45), transparent 60%)' }}
+      />
+      <div
+        className="anim-orb-b absolute top-40 -right-32 w-[460px] h-[460px] rounded-full blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(124,58,237,.45), transparent 60%)' }}
+      />
+      <div
+        className="anim-orb-c absolute bottom-0 left-1/3 w-[420px] h-[420px] rounded-full blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(52,211,153,.22), transparent 60%)' }}
+      />
+      {particles.map((p, i) => (
+        <span
+          key={i}
           className="absolute rounded-full bg-indigo-400"
-          style={{ left: p.x, top: p.y, width: p.size, height: p.size, opacity: 0.25 }}
-          animate={{ opacity: [0.1, 0.4, 0.1], y: [0, -30, 0], scale: [1, 1.5, 1] }}
-          transition={{ duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
+          style={{
+            left: `${p.left}%`,
+            top: `${p.top}%`,
+            width: p.size,
+            height: p.size,
+            animation: `particle ${p.duration}s ease-in-out ${p.delay}s infinite`,
+          }}
         />
       ))}
     </div>
   );
 }
 
-// ─── Main landing page ───────────────────────────────────────────────────────
-export function Landing() {
-  const { canInstall, install, installed } = useInstallPrompt();
-  const heroRef = useRef(null);
-  const { scrollYProgress } = useScroll({ target: heroRef });
-  const heroOpacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-  const heroY = useTransform(scrollYProgress, [0, 0.5], [0, -60]);
+// ─── SparkChart ───────────────────────────────────────────────────────────────
 
-  const [activeFeature, setActiveFeature] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setActiveFeature((f) => (f + 1) % 3), 3000);
-    return () => clearInterval(t);
-  }, []);
-
-  const features = [
-    { icon: Zap, title: 'Auto-sync with Up Bank', desc: 'Transactions pull in automatically. No manual entry, ever.', gradient: 'bg-gradient-to-br from-indigo-500/5 to-transparent' },
-    { icon: BarChart3, title: 'Spending analytics', desc: 'Category breakdowns, trends, and cash flow at a glance.', gradient: 'bg-gradient-to-br from-violet-500/5 to-transparent' },
-    { icon: CreditCard, title: 'Subscription tracking', desc: 'Never forget a recurring charge. See what renews next.', gradient: 'bg-gradient-to-br from-blue-500/5 to-transparent' },
-    { icon: Bell, title: 'Budget alerts', desc: 'Set limits per category and get warned before you overspend.', gradient: 'bg-gradient-to-br from-pink-500/5 to-transparent' },
-    { icon: Shield, title: 'Your data, your rules', desc: 'Token stored locally per account. Nothing shared externally.', gradient: 'bg-gradient-to-br from-emerald-500/5 to-transparent' },
-    { icon: Smartphone, title: 'Installable app', desc: 'Add to home screen on any device — works offline too.', gradient: 'bg-gradient-to-br from-amber-500/5 to-transparent' },
-  ];
-
-  const stats = [
-    { label: 'Transactions tracked', value: 12400, suffix: '+' },
-    { label: 'Categories', value: 24, suffix: '' },
-    { label: 'Up Bank users', value: 100, suffix: '%', prefix: '' },
-    { label: 'Data breaches', value: 0, suffix: '' },
-  ];
-
+function SparkChart() {
+  const [ref, seen] = useReveal({ threshold: 0.3 });
+  const path = 'M 0 80 C 30 70, 50 60, 70 65 S 110 55, 140 40 S 200 30, 240 22 S 300 18, 360 8';
+  const area = path + ' L 360 120 L 0 120 Z';
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 overflow-x-hidden">
+    <svg ref={ref} viewBox="0 0 360 120" className="w-full h-full">
+      <defs>
+        <linearGradient id="lg" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="lgs" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor="#6366f1" />
+          <stop offset="100%" stopColor="#a78bfa" />
+        </linearGradient>
+      </defs>
+      <path
+        d={area}
+        fill="url(#lg)"
+        style={{ opacity: seen ? 1 : 0, transition: 'opacity .8s ease .6s' }}
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke="url(#lgs)"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        className={`draw-path ${seen ? 'in' : ''}`}
+      />
+      <circle
+        cx="360"
+        cy="8"
+        r="4"
+        fill="#a78bfa"
+        style={{
+          opacity: seen ? 1 : 0,
+          transform: seen ? 'scale(1)' : 'scale(0)',
+          transformOrigin: '360px 8px',
+          transition: 'all .5s ease 1.4s',
+        }}
+      />
+    </svg>
+  );
+}
 
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <motion.nav
-        initial={{ opacity: 0, y: -16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 border-b border-white/5 bg-gray-950/80 backdrop-blur-xl"
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
-            <span className="text-sm font-bold text-white">S</span>
+// ─── DashboardMock ────────────────────────────────────────────────────────────
+
+function DashboardMock() {
+  const txs = [
+    { name: 'Coles Town Hall', cat: 'Groceries', amt: -42.18, time: 'Today, 5:42pm' },
+    { name: 'Salary — Acme Co', cat: 'Income', amt: 2840.0, time: 'Today, 9:01am' },
+    { name: 'Spotify', cat: 'Subscriptions', amt: -13.99, time: 'Yesterday' },
+    { name: 'Uber', cat: 'Transport', amt: -18.4, time: 'Yesterday' },
+    { name: 'Bondi Coffee', cat: 'Cafés', amt: -5.8, time: '2 days ago' },
+  ];
+  return (
+    <div className="relative w-[360px] sm:w-[400px]">
+      <div className="anim-float-y relative rounded-[28px] bg-gray-900/90 backdrop-blur-xl border border-white/10 p-5 shadow-2xl shadow-indigo-900/40">
+        <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 anim-pulse-soft" />
+            <span>Up Bank · synced</span>
           </div>
-          <span className="font-semibold text-gray-100">Supa<span className="text-emerald-400">Save</span></span>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link to="/login" className="text-sm text-gray-400 hover:text-gray-100 transition-colors">Sign in</Link>
-          <Link
-            to="/signup"
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 px-4 py-2 text-sm font-medium text-white transition-colors"
-          >
-            Get started <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </motion.nav>
-
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section ref={heroRef} className="relative min-h-screen flex items-center pt-20">
-        {/* Background */}
-        <div className="absolute inset-0">
-          <Orb x="10%" y="20%" size={500} color="radial-gradient(circle, #6366f1, transparent)" delay={0} />
-          <Orb x="60%" y="60%" size={400} color="radial-gradient(circle, #7c3aed, transparent)" delay={3} />
-          <Orb x="80%" y="10%" size={300} color="radial-gradient(circle, #4f46e5, transparent)" delay={6} />
-          <Particles />
-          {/* Grid */}
-          <div className="absolute inset-0 opacity-[0.03]" style={{
-            backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-          }} />
+          <span className="mono">9:41</span>
         </div>
 
-        <motion.div
-          style={{ opacity: heroOpacity, y: heroY }}
-          className="relative z-10 w-full max-w-7xl mx-auto px-6 flex flex-col lg:flex-row items-center gap-16 py-20"
-        >
-          {/* Left */}
-          <div className="flex-1 max-w-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-300 mb-6"
-            >
-              <div className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              Built for Up Bank Australia
-            </motion.div>
-
-            <motion.h1
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.2 }}
-              className="text-5xl lg:text-6xl font-bold leading-[1.1] tracking-tight mb-6"
-            >
-              Your money,{' '}
-              <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
-                finally
-              </span>
-              <br />under control.
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.35 }}
-              className="text-lg text-gray-400 leading-relaxed mb-8"
-            >
-              SupaSave connects to your Up Bank account and gives you instant spending insights, subscription tracking, and budget alerts — all in one clean dashboard.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-              className="flex flex-wrap gap-3"
-            >
-              <Link
-                to="/signup"
-                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-indigo-500/40 hover:-translate-y-0.5"
-              >
-                Start for free <ArrowRight className="h-4 w-4" />
-              </Link>
-
-              {canInstall && !installed ? (
-                <motion.button
-                  onClick={install}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-2 rounded-xl border border-white/12 bg-white/5 hover:bg-white/8 px-6 py-3 text-sm font-medium text-gray-300 backdrop-blur transition-colors"
-                >
-                  <Download className="h-4 w-4" />
-                  Install app
-                </motion.button>
-              ) : (
-                <Link
-                  to="/login"
-                  className="flex items-center gap-2 rounded-xl border border-white/12 bg-white/5 hover:bg-white/8 px-6 py-3 text-sm font-medium text-gray-300 backdrop-blur transition-colors"
-                >
-                  Sign in
-                </Link>
-              )}
-            </motion.div>
-
-            {/* Trust signals */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              className="flex items-center gap-4 mt-8"
-            >
-              {['Free forever', 'No card required', 'Up Bank only'].map((s) => (
-                <div key={s} className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
-                  {s}
-                </div>
-              ))}
-            </motion.div>
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-widest text-gray-500">Total balance</div>
+          <div className="flex items-baseline gap-2 mt-1">
+            <CountUp
+              value={8429.42}
+              className="mono text-4xl font-semibold text-white"
+              prefix="$"
+              decimals={2}
+            />
+            <span className="text-emerald-400 text-sm mono">+$214.06</span>
           </div>
+        </div>
 
-          {/* Right — app mockup */}
-          <motion.div
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, delay: 0.4, ease: [0.32, 0.72, 0, 1] }}
-            className="flex-1 flex justify-center"
-          >
-            <AppMockup />
-          </motion.div>
-        </motion.div>
+        <div className="mt-4 h-[120px] relative">
+          <SparkChart />
+        </div>
 
-        {/* Scroll indicator */}
-        <motion.div
-          className="absolute bottom-8 left-1/2 -translate-x-1/2"
-          animate={{ y: [0, 8, 0] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <ChevronDown className="h-5 w-5 text-gray-600" />
-        </motion.div>
-      </section>
-
-      {/* ── Stats bar ────────────────────────────────────────────────────── */}
-      <section className="relative py-10 border-y border-white/5 bg-white/2">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 lg:grid-cols-4 gap-8">
-          {stats.map((s) => (
-            <div key={s.label} className="text-center">
-              <p className="text-3xl font-bold font-mono text-gray-100">
-                <Counter to={s.value} suffix={s.suffix} prefix={s.prefix} />
-              </p>
-              <p className="text-xs text-gray-500 mt-1">{s.label}</p>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {[
+            { k: 'In', v: '+$3,120', c: 'text-emerald-400' },
+            { k: 'Out', v: '-$1,847', c: 'text-red-400' },
+            { k: 'Save', v: '$1,273', c: 'text-indigo-300' },
+          ].map((s, i) => (
+            <div
+              key={s.k}
+              className="anim-fade-up rounded-xl bg-white/5 border border-white/10 px-3 py-2"
+              style={{ animationDelay: `${0.6 + i * 0.1}s` }}
+            >
+              <div className="text-[10px] uppercase text-gray-500 tracking-wider">{s.k}</div>
+              <div className={`mono text-sm ${s.c}`}>{s.v}</div>
             </div>
           ))}
         </div>
-      </section>
 
-      {/* ── Features ─────────────────────────────────────────────────────── */}
-      <section className="relative py-24 overflow-hidden">
-        <Orb x="70%" y="30%" size={400} color="radial-gradient(circle, #7c3aed, transparent)" delay={2} />
-        <div className="relative z-10 max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <motion.p
-              initial={{ opacity: 0, y: 12 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3"
-            >
-              Everything you need
-            </motion.p>
-            <motion.h2
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.1 }}
-              className="text-3xl lg:text-4xl font-bold text-gray-100"
-            >
-              Powerful finance tools,<br />zero complexity.
-            </motion.h2>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+            <span className="uppercase tracking-widest">Recent</span>
+            <span className="text-indigo-300">View all →</span>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {features.map((f, i) => (
-              <FeatureCard key={f.title} {...f} delay={i * 0.08} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Animated showcase ────────────────────────────────────────────── */}
-      <section className="py-24 border-t border-white/5">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div>
-              <motion.p
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3"
+          <div className="flex flex-col gap-2">
+            {txs.map((t, i) => (
+              <div
+                key={t.name}
+                className="anim-fade-up flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5"
+                style={{ animationDelay: `${0.7 + i * 0.12}s` }}
               >
-                Real-time insights
-              </motion.p>
-              <motion.h2
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.1 }}
-                className="text-3xl font-bold text-gray-100 mb-5"
-              >
-                See where your money actually goes.
-              </motion.h2>
-              <motion.p
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.2 }}
-                className="text-gray-400 leading-relaxed mb-8"
-              >
-                Every Up Bank transaction is automatically categorised and visualised. Spot patterns, track trends, and budget smarter — without lifting a finger.
-              </motion.p>
-
-              {/* Animated feature tabs */}
-              <div className="space-y-2">
-                {['Automatic categorisation', 'Monthly trend charts', 'Cash flow tracking'].map((item, i) => (
-                  <motion.button
-                    key={item}
-                    onClick={() => setActiveFeature(i)}
-                    whileHover={{ x: 4 }}
-                    className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm transition-all ${activeFeature === i ? 'bg-indigo-500/15 border border-indigo-500/30 text-indigo-300' : 'text-gray-500 hover:text-gray-300'}`}
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-xs text-white/90 font-semibold"
+                    style={{
+                      background:
+                        t.amt > 0
+                          ? 'linear-gradient(135deg,#10b981,#34d399)'
+                          : 'linear-gradient(135deg,#6366f1,#7c3aed)',
+                    }}
                   >
-                    <div className={`h-2 w-2 rounded-full transition-colors ${activeFeature === i ? 'bg-indigo-400' : 'bg-gray-700'}`} />
-                    {item}
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-
-            {/* Animated chart mockup */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, ease: [0.32, 0.72, 0, 1] }}
-              className="rounded-2xl border border-white/8 bg-gray-900/50 p-5 backdrop-blur"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold text-gray-200">Spending by category</p>
-                <span className="text-xs text-gray-500">May 2026</span>
-              </div>
-
-              {/* Bar chart */}
-              <div className="space-y-3">
-                {[
-                  { label: 'Groceries', pct: 82, amount: '$480', color: 'bg-indigo-500' },
-                  { label: 'Dining', pct: 55, amount: '$320', color: 'bg-violet-500' },
-                  { label: 'Transport', pct: 38, amount: '$218', color: 'bg-blue-500' },
-                  { label: 'Entertainment', pct: 24, amount: '$140', color: 'bg-pink-500' },
-                  { label: 'Utilities', pct: 18, amount: '$105', color: 'bg-amber-500' },
-                ].map((bar, i) => (
-                  <div key={bar.label}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-gray-400">{bar.label}</span>
-                      <span className="text-gray-500 font-mono">{bar.amount}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-white/5 overflow-hidden">
-                      <motion.div
-                        className={`h-full rounded-full ${bar.color}`}
-                        initial={{ width: 0 }}
-                        whileInView={{ width: `${bar.pct}%` }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.8, delay: i * 0.1, ease: [0.32, 0.72, 0, 1] }}
-                      />
+                    {t.name[0]}
+                  </div>
+                  <div>
+                    <div className="text-[13px] text-white">{t.name}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {t.cat} · {t.time}
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {/* Summary row */}
-              <div className="mt-5 pt-4 border-t border-white/5 flex justify-between">
-                <div className="flex items-center gap-1.5">
-                  <TrendingDown className="h-4 w-4 text-red-400" />
-                  <span className="text-xs text-gray-400">Total spent</span>
                 </div>
-                <span className="text-sm font-bold font-mono text-gray-100">$1,263</span>
+                <div className={`mono text-sm ${t.amt > 0 ? 'text-emerald-400' : 'text-gray-200'}`}>
+                  {t.amt > 0 ? '+' : ''}${Math.abs(t.amt).toFixed(2)}
+                </div>
               </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Install CTA ───────────────────────────────────────────────────── */}
-      <section className="py-24 border-t border-white/5 relative overflow-hidden">
-        <Orb x="20%" y="50%" size={500} color="radial-gradient(circle, #6366f1, transparent)" delay={1} />
-        <div className="relative z-10 max-w-3xl mx-auto px-6 text-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            whileInView={{ scale: 1, opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, type: 'spring', stiffness: 200 }}
-            className="inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-2xl shadow-indigo-500/30 mb-6 mx-auto"
-          >
-            <Download className="h-7 w-7 text-white" />
-          </motion.div>
-
-          <motion.h2
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-3xl lg:text-4xl font-bold text-gray-100 mb-4"
-          >
-            Add to your home screen
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.1 }}
-            className="text-gray-400 mb-8"
-          >
-            SupaSave is a Progressive Web App — install it directly from your browser. No App Store, no updates needed, works offline.
-          </motion.p>
-
-          <div className="flex flex-col sm:flex-row gap-3 justify-center mb-10">
-            {canInstall && !installed ? (
-              <motion.button
-                onClick={install}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30"
-              >
-                <Download className="h-4 w-4" />
-                Install SupaSave
-              </motion.button>
-            ) : installed ? (
-              <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-8 py-3.5 text-sm font-semibold text-emerald-400">
-                <Check className="h-4 w-4" />
-                Installed!
-              </div>
-            ) : (
-              <Link
-                to="/signup"
-                className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-shadow"
-              >
-                Get started free <ArrowRight className="h-4 w-4" />
-              </Link>
-            )}
-          </div>
-
-          {/* Platform instructions */}
-          <div className="grid sm:grid-cols-2 gap-4 text-left">
-            {[
-              { platform: '🌐 Chrome / Edge (Desktop)', steps: ['Open site in Chrome', 'Click ⬇ in address bar', 'Select "Install"'] },
-              { platform: '📱 Safari (iOS)', steps: ['Open site in Safari', 'Tap Share button', 'Tap "Add to Home Screen"'] },
-            ].map((p) => (
-              <motion.div
-                key={p.platform}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className="rounded-xl border border-white/8 bg-white/3 p-4"
-              >
-                <p className="text-sm font-medium text-gray-300 mb-2">{p.platform}</p>
-                <ol className="space-y-1">
-                  {p.steps.map((s, i) => (
-                    <li key={s} className="flex items-start gap-2 text-xs text-gray-500">
-                      <span className="text-indigo-500 font-mono font-bold shrink-0">{i + 1}.</span>
-                      {s}
-                    </li>
-                  ))}
-                </ol>
-              </motion.div>
             ))}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* ── Final CTA ─────────────────────────────────────────────────────── */}
-      <section className="py-24 border-t border-white/5">
-        <div className="max-w-2xl mx-auto px-6 text-center">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/8 to-violet-600/8 p-12"
+      <div className="anim-tilt-a absolute -left-8 top-24 rounded-xl bg-gray-900/95 border border-emerald-400/40 px-3 py-2 shadow-xl">
+        <div className="text-[10px] uppercase tracking-widest text-emerald-400">vs last month</div>
+        <div className="mono text-sm text-white">+14.2%</div>
+      </div>
+      <div className="anim-tilt-b absolute -right-6 top-1/2 rounded-xl bg-gray-900/95 border border-indigo-400/40 px-3 py-2 shadow-xl">
+        <div className="flex items-center gap-1.5 text-xs text-indigo-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 anim-pulse-soft" /> Up Bank synced
+        </div>
+      </div>
+      <div className="anim-tilt-c absolute -right-10 -bottom-4 rounded-xl bg-gray-900/95 border border-violet-400/40 px-3 py-2 shadow-xl">
+        <div className="text-[10px] uppercase tracking-widest text-violet-300">Saved this week</div>
+        <div className="mono text-sm text-white">$312.40</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reveal wrapper ───────────────────────────────────────────────────────────
+
+interface RevealProps {
+  delay?: number;
+  className?: string;
+  children: ReactNode;
+  as?: ElementType;
+}
+
+function Reveal({ delay = 0, className = '', children, as: As = 'div' }: RevealProps) {
+  const [ref, seen] = useReveal();
+  return (
+    <As
+      ref={ref}
+      className={`reveal ${seen ? 'in' : ''} ${className}`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </As>
+  );
+}
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+const strokeProps: IconProps = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.7,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+};
+
+function DownloadIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
+    </svg>
+  );
+}
+function CheckIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M5 12l4 4 10-10" />
+    </svg>
+  );
+}
+function SyncIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M16 4v4h-4M8 20v-4h4" />
+    </svg>
+  );
+}
+function ChartIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+    </svg>
+  );
+}
+function RepeatIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M3 12a6 6 0 016-6h9l-3-3m3 3l-3 3M21 12a6 6 0 01-6 6H6l3 3m-3-3l3-3" />
+    </svg>
+  );
+}
+function BellIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M6 8a6 6 0 0112 0v5l2 3H4l2-3V8zM10 20a2 2 0 004 0" />
+    </svg>
+  );
+}
+function LockIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </svg>
+  );
+}
+function DesktopIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
+}
+function PhoneIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <rect x="7" y="2" width="10" height="20" rx="2.5" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+function AndroidIcon(p: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...strokeProps} {...p}>
+      <path d="M5 17h14v-5a7 7 0 00-14 0v5zM8 14v.01M16 14v.01M7 7l-1.5-2M17 7l1.5-2M5 17v3M19 17v3" />
+    </svg>
+  );
+}
+
+// ─── Nav ──────────────────────────────────────────────────────────────────────
+
+interface NavProps {
+  onInstall: () => void;
+  canInstall: boolean;
+  installed: boolean;
+}
+
+function Nav({ onInstall, canInstall, installed }: NavProps) {
+  return (
+    <nav className="anim-fade fixed top-0 inset-x-0 z-50 backdrop-blur-xl bg-gray-950/70 border-b border-white/5">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+        <Logo />
+        <div className="hidden md:flex items-center gap-7 text-sm text-gray-400">
+          <a href="#features" className="hover:text-white transition">Features</a>
+          <a href="#analytics" className="hover:text-white transition">Analytics</a>
+          <a href="#install" className="hover:text-white transition">Install</a>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/login"
+            className="hidden sm:inline-flex text-sm text-gray-300 hover:text-white px-3 py-2"
           >
-            <div className="flex justify-center mb-2">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} className="h-4 w-4 text-amber-400 fill-amber-400" />
-              ))}
-            </div>
-            <h2 className="text-3xl font-bold text-gray-100 mb-4 mt-4">Ready to take control?</h2>
-            <p className="text-gray-400 mb-8">Join Up Bank users who finally know where their money goes.</p>
+            Sign in
+          </Link>
+          <button
+            onClick={onInstall}
+            disabled={installed}
+            className="hidden sm:inline-flex items-center gap-1.5 text-sm text-white px-3 py-2 rounded-lg border border-white/10 hover:bg-white/5 transition cta-btn"
+            title={canInstall ? 'Install app' : 'Open in Chrome / Edge to install'}
+          >
+            <DownloadIcon className="w-4 h-4" />
+            {installed ? 'Installed' : 'Download'}
+          </button>
+          <Link
+            to="/signup"
+            className="grad-bg text-sm text-white px-3.5 py-2 rounded-lg shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition cta-btn"
+          >
+            Get started →
+          </Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+// ─── Hero ─────────────────────────────────────────────────────────────────────
+
+function Hero({ onInstall, canInstall, installed }: NavProps) {
+  return (
+    <section className="relative min-h-screen pt-28 pb-20 overflow-hidden">
+      <BackgroundFX />
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <div className="anim-fade-up inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 anim-ping-soft" />
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-400" />
+            </span>
+            Built for Up Bank · Australia 🇦🇺
+          </div>
+          <h1
+            className="anim-fade-up mt-5 text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight text-white leading-[1.02]"
+            style={{ animationDelay: '0.1s' }}
+          >
+            Your money,
+            <br />
+            <span className="grad-text">finally</span> under control.
+          </h1>
+          <p
+            className="anim-fade-up mt-6 text-lg text-gray-400 max-w-xl"
+            style={{ animationDelay: '0.2s' }}
+          >
+            SupaSave syncs every transaction from your Up Bank in real time, tracks your
+            subscriptions, and shows you exactly where the money goes — in a clean, fast,
+            installable app.
+          </p>
+          <div
+            className="anim-fade-up mt-8 flex flex-wrap items-center gap-3"
+            style={{ animationDelay: '0.3s' }}
+          >
+            <button
+              onClick={onInstall}
+              disabled={installed}
+              className="cta-btn group grad-bg text-white px-5 py-3 rounded-xl font-medium shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/60 flex items-center gap-2"
+            >
+              <DownloadIcon className="w-4 h-4" />
+              {installed
+                ? 'Installed ✓'
+                : canInstall
+                  ? 'Install app'
+                  : 'Download for Mac / iOS / Android'}
+            </button>
             <Link
               to="/signup"
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:-translate-y-0.5 transition-all"
+              className="cta-btn px-5 py-3 rounded-xl border border-white/10 text-gray-200 hover:bg-white/5 transition flex items-center gap-2"
             >
-              Create free account <ArrowRight className="h-4 w-4" />
+              Sign up free <span aria-hidden>→</span>
             </Link>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-white/5 py-8">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600">
-              <span className="text-xs font-bold text-white">S</span>
+          </div>
+          <div
+            className="anim-fade-up mt-8 flex flex-wrap items-center gap-5 text-xs text-gray-500"
+            style={{ animationDelay: '0.5s' }}
+          >
+            <div className="flex items-center gap-1.5">
+              <CheckIcon className="w-3.5 h-3.5 text-emerald-400" /> No card required
             </div>
-            <span className="text-sm text-gray-500">Supa<span className="text-emerald-400">Save</span></span>
-            <span className="text-gray-700 text-xs ml-2">Built for Up Bank users 🇦🇺</span>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-gray-600">
-            <Link to="/login" className="hover:text-gray-400 transition-colors">Sign in</Link>
-            <Link to="/signup" className="hover:text-gray-400 transition-colors">Sign up</Link>
+            <div className="flex items-center gap-1.5">
+              <CheckIcon className="w-3.5 h-3.5 text-emerald-400" /> End-to-end encrypted
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckIcon className="w-3.5 h-3.5 text-emerald-400" /> Works offline
+            </div>
           </div>
         </div>
-      </footer>
+        <div
+          className="flex justify-center lg:justify-end anim-fade"
+          style={{ animationDelay: '0.2s' }}
+        >
+          <DashboardMock />
+        </div>
+      </div>
+      <div className="anim-scroll-hint absolute bottom-6 left-1/2 -translate-x-1/2 text-gray-500 text-xs flex flex-col items-center gap-1">
+        Scroll
+        <div className="w-px h-6 bg-gradient-to-b from-gray-500 to-transparent" />
+      </div>
+    </section>
+  );
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+function Stats() {
+  const items = [
+    { v: 12400, suffix: '+', label: 'Transactions tracked' },
+    { v: 24, suffix: '', label: 'Smart categories' },
+    { v: 100, suffix: '%', label: 'Up Bank users' },
+    { v: 0, suffix: '', label: 'Data breaches' },
+  ];
+  return (
+    <section className="relative border-y border-white/5 bg-gray-950/60">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
+        {items.map((it, i) => (
+          <Reveal key={it.label} delay={i * 100}>
+            <CountUp
+              value={it.v}
+              suffix={it.suffix}
+              className="mono text-4xl sm:text-5xl text-white font-semibold"
+            />
+            <div className="text-xs uppercase tracking-widest text-gray-500 mt-2">{it.label}</div>
+          </Reveal>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Features ─────────────────────────────────────────────────────────────────
+
+function Features() {
+  const features = [
+    {
+      Icon: SyncIcon,
+      title: 'Auto-sync with Up Bank',
+      desc: 'Transactions stream in the moment they hit your account. No CSVs, no clicking refresh.',
+    },
+    {
+      Icon: ChartIcon,
+      title: 'Spending analytics',
+      desc: 'Beautiful charts that actually answer the question: where did my money go this month?',
+    },
+    {
+      Icon: RepeatIcon,
+      title: 'Subscription tracking',
+      desc: 'Find every recurring charge, see what you forgot you were paying for, cancel with one tap.',
+    },
+    {
+      Icon: BellIcon,
+      title: 'Smart budget alerts',
+      desc: "Set a category limit. Get a quiet nudge before you blow past it — never after.",
+    },
+    {
+      Icon: LockIcon,
+      title: 'Your data, your rules',
+      desc: "End-to-end encrypted. Tokens stored per-user. We can't read your transactions, ever.",
+    },
+    {
+      Icon: DownloadIcon,
+      title: 'Installable app',
+      desc: 'Add SupaSave to your home screen on iOS, Android, Mac and Windows. Works offline.',
+    },
+  ];
+  return (
+    <section id="features" className="relative py-28">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8">
+        <Reveal className="max-w-2xl">
+          <div className="text-xs uppercase tracking-widest text-indigo-300">Features</div>
+          <h2 className="mt-3 text-4xl sm:text-5xl font-semibold text-white tracking-tight">
+            Everything you need.
+            <br />
+            <span className="text-gray-500">Nothing you don't.</span>
+          </h2>
+        </Reveal>
+        <div className="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {features.map((f, i) => (
+            <Reveal
+              key={f.title}
+              delay={(i % 3) * 80}
+              className="feature-card relative rounded-2xl bg-gray-900/60 border border-white/5 p-6 overflow-hidden"
+            >
+              <div className="w-11 h-11 rounded-xl grad-bg flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                <f.Icon className="w-5 h-5" />
+              </div>
+              <h3 className="mt-5 text-lg font-semibold text-white">{f.title}</h3>
+              <p className="mt-2 text-sm text-gray-400 leading-relaxed">{f.desc}</p>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+interface BarRowProps {
+  bar: BarData;
+  delay: number;
+}
+
+function BarRow({ bar, delay }: BarRowProps) {
+  const [ref, seen] = useReveal({ threshold: 0.3 });
+  return (
+    <div ref={ref}>
+      <div className="flex items-center justify-between text-sm mb-1.5">
+        <span className="text-gray-300">{bar.label}</span>
+        <span className="mono text-gray-400">${bar.amt}</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+        <div
+          className={`bar-fill h-full rounded-full ${seen ? 'in' : ''}`}
+          style={
+            {
+              background: `linear-gradient(90deg, ${bar.color}, ${bar.color}aa)`,
+              '--w': `${bar.pct * 100}%`,
+              transitionDelay: `${delay}ms`,
+            } as React.CSSProperties
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function Analytics() {
+  const tabs = [
+    {
+      k: 'categorise',
+      label: 'Automatic categorisation',
+      body: 'Every charge sorted into Groceries, Transport, Cafés, Subscriptions and more — adjustable, learnable, instant.',
+    },
+    {
+      k: 'trends',
+      label: 'Monthly trend charts',
+      body: 'See six months of spending at a glance. Catch creeping costs before they become problems.',
+    },
+    {
+      k: 'cashflow',
+      label: 'Cash flow tracking',
+      body: "Money in, money out, money saved. The simplest possible answer to 'am I doing okay?'",
+    },
+  ];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setActive((a) => (a + 1) % tabs.length), 3500);
+    return () => clearInterval(id);
+  }, [tabs.length]);
+  const bars: BarData[] = [
+    { label: 'Groceries', amt: 612, pct: 0.92, color: '#6366f1' },
+    { label: 'Transport', amt: 248, pct: 0.55, color: '#8b5cf6' },
+    { label: 'Cafés', amt: 184, pct: 0.41, color: '#a78bfa' },
+    { label: 'Subscriptions', amt: 142, pct: 0.34, color: '#c4b5fd' },
+    { label: 'Eating out', amt: 96, pct: 0.22, color: '#34d399' },
+    { label: 'Shopping', amt: 52, pct: 0.12, color: '#f87171' },
+  ];
+  return (
+    <section id="analytics" className="relative py-28 border-t border-white/5">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 grid lg:grid-cols-2 gap-14 items-center">
+        <Reveal>
+          <div className="text-xs uppercase tracking-widest text-indigo-300">Analytics</div>
+          <h2 className="mt-3 text-4xl sm:text-5xl font-semibold text-white tracking-tight">
+            Charts that
+            <br />
+            <span className="grad-text">actually</span> answer questions.
+          </h2>
+          <p className="mt-5 text-gray-400 max-w-md">
+            SupaSave turns your raw Up Bank feed into clear, honest numbers — the kind that make you
+            change behaviour, not just stare at them.
+          </p>
+          <div className="mt-8 flex flex-col gap-2">
+            {tabs.map((t, i) => (
+              <button
+                key={t.k}
+                onClick={() => setActive(i)}
+                className={`relative text-left rounded-xl px-4 py-3 border transition overflow-hidden ${
+                  active === i
+                    ? 'bg-white/5 border-indigo-400/40'
+                    : 'bg-transparent border-white/5 hover:border-white/10'
+                }`}
+              >
+                {active === i && (
+                  <div
+                    className="absolute inset-0 rounded-xl"
+                    style={{
+                      background: 'linear-gradient(90deg, rgba(99,102,241,.12), transparent 60%)',
+                    }}
+                  />
+                )}
+                <div className="relative">
+                  <div
+                    className={`text-sm font-medium ${active === i ? 'text-white' : 'text-gray-300'}`}
+                  >
+                    {t.label}
+                  </div>
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ${
+                      active === i ? 'max-h-20 opacity-100 mt-1' : 'max-h-0 opacity-0'
+                    }`}
+                  >
+                    <div className="text-sm text-gray-400">{t.body}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Reveal>
+        <Reveal
+          delay={120}
+          className="rounded-2xl bg-gray-900/70 border border-white/10 p-6 backdrop-blur-xl shadow-2xl shadow-indigo-900/20"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-widest text-gray-500">This month</div>
+              <div className="mono text-3xl text-white mt-1">$1,334.00</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-widest text-gray-500">vs last</div>
+              <div className="mono text-emerald-400">-12.4%</div>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col gap-4">
+            {bars.map((b, i) => (
+              <BarRow key={b.label} bar={b} delay={i * 80} />
+            ))}
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// ─── Install ──────────────────────────────────────────────────────────────────
+
+function Install({ onInstall, canInstall, installed }: NavProps) {
+  const platforms: Platform[] = [
+    {
+      Icon: DesktopIcon,
+      name: 'Chrome / Edge — Desktop',
+      steps: [
+        'Click the install ⤓ icon in the address bar',
+        'Choose Install · SupaSave',
+        'It opens like a native app',
+      ],
+    },
+    {
+      Icon: PhoneIcon,
+      name: 'Safari — iOS',
+      steps: [
+        'Tap the Share icon at the bottom',
+        "Scroll and tap 'Add to Home Screen'",
+        'Tap Add — done',
+      ],
+    },
+    {
+      Icon: AndroidIcon,
+      name: 'Chrome — Android',
+      steps: [
+        'Tap the ⋮ menu top-right',
+        "Tap 'Install app'",
+        'Open it from your home screen',
+      ],
+    },
+  ];
+  return (
+    <section id="install" className="relative py-28 border-t border-white/5 overflow-hidden">
+      <div className="absolute inset-0 -z-0">
+        <div
+          className="anim-pulse-soft absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(124,58,237,.18), transparent 60%)' }}
+        />
+      </div>
+      <div className="relative max-w-5xl mx-auto px-5 sm:px-8 text-center">
+        <Reveal className="relative inline-block">
+          <div className="absolute inset-0 rounded-full grad-bg opacity-50 blur-xl anim-pulse-soft" />
+          <div className="relative w-20 h-20 rounded-full grad-bg flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40">
+            <DownloadIcon className="w-9 h-9" />
+          </div>
+        </Reveal>
+        <Reveal delay={100}>
+          <h2 className="mt-8 text-4xl sm:text-5xl font-semibold text-white tracking-tight">
+            Add SupaSave to your <span className="grad-text">home screen</span>.
+          </h2>
+        </Reveal>
+        <Reveal delay={200}>
+          <p className="mt-4 text-gray-400 max-w-xl mx-auto">
+            One tap to install. No app store, no waiting, no 200MB download. SupaSave lives on your
+            device and works offline.
+          </p>
+        </Reveal>
+        <Reveal delay={300} className="mt-8 flex flex-wrap justify-center gap-3">
+          <button
+            onClick={onInstall}
+            disabled={installed}
+            className="cta-btn grad-bg text-white px-6 py-3.5 rounded-xl font-medium shadow-xl shadow-indigo-500/40 hover:shadow-indigo-500/70 flex items-center gap-2"
+          >
+            <DownloadIcon className="w-4 h-4" />
+            {installed ? 'Installed ✓' : canInstall ? 'Install SupaSave now' : 'Download the app'}
+          </button>
+          <Link
+            to="/"
+            className="cta-btn px-6 py-3.5 rounded-xl border border-white/10 text-gray-200 hover:bg-white/5 transition"
+          >
+            Open in browser instead
+          </Link>
+        </Reveal>
+        {!canInstall && !installed && (
+          <div className="mt-3 text-xs text-gray-500">
+            Tip: open this page in Chrome or Edge to enable one-click install.
+          </div>
+        )}
+        <div className="mt-14 grid md:grid-cols-3 gap-4 text-left">
+          {platforms.map((p, i) => (
+            <Reveal
+              key={p.name}
+              delay={i * 80}
+              className="rounded-2xl bg-gray-900/60 border border-white/10 p-6"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-indigo-300">
+                  <p.Icon className="w-5 h-5" />
+                </div>
+                <div className="text-sm text-white font-medium">{p.name}</div>
+              </div>
+              <ol className="mt-4 flex flex-col gap-2.5 text-sm text-gray-400">
+                {p.steps.map((s, j) => (
+                  <li key={j} className="flex gap-3">
+                    <span className="mono text-indigo-300 w-5 shrink-0">{j + 1}</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Final CTA ────────────────────────────────────────────────────────────────
+
+function FinalCTA({ onInstall, canInstall, installed }: NavProps) {
+  return (
+    <section className="relative py-24">
+      <div className="max-w-4xl mx-auto px-5 sm:px-8">
+        <Reveal className="grad-border rounded-3xl p-10 sm:p-14 text-center glow-violet relative overflow-hidden">
+          <div
+            className="anim-pulse-soft absolute -top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full blur-3xl pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(124,58,237,.25), transparent 60%)' }}
+          />
+          <div className="relative">
+            <div className="flex justify-center gap-1 text-amber-300">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <span key={i} className="anim-fade-up" style={{ animationDelay: `${i * 80}ms` }}>
+                  ★
+                </span>
+              ))}
+            </div>
+            <h2 className="mt-5 text-4xl sm:text-5xl font-semibold text-white tracking-tight">
+              Stop guessing. Start saving.
+            </h2>
+            <p className="mt-4 text-gray-400 max-w-xl mx-auto">
+              Connect your Up Bank in 30 seconds. Install the app. Watch your money make sense again.
+            </p>
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              <button
+                onClick={onInstall}
+                disabled={installed}
+                className="cta-btn grad-bg text-white px-6 py-3.5 rounded-xl font-medium shadow-xl shadow-indigo-500/40 flex items-center gap-2"
+              >
+                <DownloadIcon className="w-4 h-4" />
+                {installed ? 'Installed ✓' : canInstall ? 'Install app' : 'Download SupaSave'}
+              </button>
+              <Link
+                to="/signup"
+                className="cta-btn px-6 py-3.5 rounded-xl border border-white/10 text-gray-200 hover:bg-white/5 transition"
+              >
+                Create free account
+              </Link>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+
+function Footer() {
+  return (
+    <footer className="border-t border-white/5 py-12">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+        <div>
+          <Logo />
+          <div className="text-xs text-gray-500 mt-3">Built for Up Bank users 🇦🇺</div>
+        </div>
+        <div className="flex items-center gap-6 text-sm text-gray-400">
+          <Link to="/login" className="hover:text-white transition">Sign in</Link>
+          <Link to="/signup" className="hover:text-white transition">Sign up</Link>
+          <a href="#features" className="hover:text-white transition">Features</a>
+          <a href="#install" className="hover:text-white transition">Install</a>
+        </div>
+        <div className="text-xs text-gray-600 mono">© 2026 SupaSave</div>
+      </div>
+    </footer>
+  );
+}
+
+// ─── Landing Page ─────────────────────────────────────────────────────────────
+
+export function Landing() {
+  const [installEvt, setInstallEvt] = useState<InstallEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallEvt(e as InstallEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallEvt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    if (window.matchMedia?.('(display-mode: standalone)').matches) setInstalled(true);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    if (installEvt) {
+      installEvt.prompt();
+      const { outcome } = await installEvt.userChoice;
+      if (outcome === 'accepted') setInstalled(true);
+      setInstallEvt(null);
+    } else {
+      const el = document.getElementById('install');
+      if (el) window.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' });
+    }
+  }, [installEvt]);
+
+  const canInstall = !!installEvt;
+
+  return (
+    <div className="landing-root relative min-h-screen bg-[#030712]">
+      <Nav onInstall={handleInstall} canInstall={canInstall} installed={installed} />
+      <Hero onInstall={handleInstall} canInstall={canInstall} installed={installed} />
+      <Stats />
+      <Features />
+      <Analytics />
+      <Install onInstall={handleInstall} canInstall={canInstall} installed={installed} />
+      <FinalCTA onInstall={handleInstall} canInstall={canInstall} installed={installed} />
+      <Footer />
     </div>
   );
 }
