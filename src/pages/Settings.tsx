@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
   Trash2, Plus, X, Bell, BellOff, Target, ShieldAlert,
-  Paintbrush, Moon, Sun, Palette, Check, SlidersHorizontal,
+  Paintbrush, Moon, Sun, Palette, Check, SlidersHorizontal, Tag,
 } from 'lucide-react';
+import { CategoryManager } from '../components/transactions/CategoryManager';
 import { useFinanceStore } from '../store/financeStore';
 import { useToast } from '../hooks/useToast';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
@@ -51,13 +52,14 @@ const PRESET_COLORS = [
   { hex: '#f97316', label: 'Orange'  },
 ];
 
-type Section = 'appearance' | 'notifications' | 'budgets' | 'danger';
+type Section = 'appearance' | 'notifications' | 'budgets' | 'categories' | 'danger';
 
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'appearance',    label: 'Appearance',    icon: Paintbrush  },
   { id: 'notifications', label: 'Notifications', icon: Bell        },
-  { id: 'budgets',       label: 'Budgets',        icon: Target      },
-  { id: 'danger',        label: 'Danger Zone',    icon: ShieldAlert },
+  { id: 'budgets',       label: 'Budgets',       icon: Target      },
+  { id: 'categories',   label: 'Categories',    icon: Tag         },
+  { id: 'danger',        label: 'Danger Zone',   icon: ShieldAlert },
 ];
 
 // ─── Panel components (proper components, not inline JSX variables) ───────────
@@ -566,6 +568,10 @@ export function Settings() {
                     onRemove={(cat) => setBudget(cat, 0)}
                     onAdd={handleAddBudget}
                   />
+                )}
+
+                {section === 'categories' && (
+                  <CategoryManager isOpen={true} onClose={() => {}} inline />
                 )}
 
                 {section === 'danger' && (

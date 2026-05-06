@@ -14,6 +14,7 @@ import { Subscriptions } from './pages/Subscriptions';
 import { Login } from './pages/auth/Login';
 import { Signup } from './pages/auth/Signup';
 import { NotFound } from './pages/NotFound';
+import { Landing } from './pages/Landing';
 
 export function App() {
   return (
@@ -22,6 +23,9 @@ export function App() {
       <BrowserRouter>
         <AnimatePresence mode="wait">
           <Routes>
+            {/* Public landing page */}
+            <Route path="/landing" element={<Landing />} />
+
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />

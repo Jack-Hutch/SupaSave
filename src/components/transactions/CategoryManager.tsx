@@ -255,9 +255,10 @@ function CategoryForm({ initial, onSave, onCancel }: CategoryFormProps) {
 interface CategoryManagerProps {
   isOpen:  boolean;
   onClose: () => void;
+  inline?: boolean;
 }
 
-export function CategoryManager({ isOpen, onClose }: CategoryManagerProps) {
+export function CategoryManager({ isOpen, onClose, inline }: CategoryManagerProps) {
   const settings             = useFinanceStore((s) => s.settings);
   const addCustomCategory    = useFinanceStore((s) => s.addCustomCategory);
   const updateCustomCategory = useFinanceStore((s) => s.updateCustomCategory);
@@ -293,9 +294,8 @@ export function CategoryManager({ isOpen, onClose }: CategoryManagerProps) {
     setConfirmDelete(null);
   };
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Manage Categories" size="lg">
-      <div className="p-5 space-y-6">
+  const content = (
+    <div className="p-5 space-y-6">
 
         {/* ── Custom categories ──────────────────────────────────────── */}
         <section>
@@ -453,7 +453,14 @@ export function CategoryManager({ isOpen, onClose }: CategoryManagerProps) {
             )}
           </AnimatePresence>
         </section>
-      </div>
+    </div>
+  );
+
+  if (inline) return content;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Manage Categories" size="lg">
+      {content}
     </Modal>
   );
 }
