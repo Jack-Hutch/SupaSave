@@ -54,10 +54,14 @@ export function ConnectBank() {
     setConnecting(true);
     setConnectError(null);
     try {
-      // For Up Bank: if a manual token was entered pass it through; otherwise
-      // the provider reads VITE_UP_API_TOKEN automatically via getUpToken().
+      // For Up Bank: prefer manually entered token, then fall back to the
+      // env token (dev only). Always pass explicitly so the provider doesn't
+      // rely on getUpToken() which blocks env reads in production builds.
       const opts: Record<string, unknown> = {};
-      if (provider === 'up' && upToken.trim()) opts.upPersonalAccessToken = upToken.trim();
+      if (provider === 'up') {
+        const tok = upToken.trim() || import.meta.env.VITE_UP_API_TOKEN || '';
+        if (tok) opts.upPersonalAccessToken = tok;
+      }
       await connectBank(provider, opts);
       setConfiguring(null);
       setUpToken('');
