@@ -15,6 +15,8 @@ export interface CategoryDef {
   color:          ColorKey;
   subcategories:  string[];
   isBuiltIn?:     boolean;
+  /** When true, the category is hidden from pickers/lists (used to "delete" built-ins) */
+  hidden?:        boolean;
 }
 
 export interface Profile {
@@ -32,6 +34,19 @@ export interface UserSettings {
   currency: string;
   notifications: boolean;
   customCategories?: CategoryDef[];
+  incomeSources?: IncomeSource[];
+}
+
+export type IncomeSourceType = 'main' | 'freelance' | 'sidejob' | 'other';
+export type PayType = 'hourly' | 'flat';
+
+export interface IncomeSource {
+  id: string;
+  name: string;
+  type: IncomeSourceType;
+  default_pay_type: PayType;
+  default_rate?: number;
+  color?: string; // hex
 }
 
 export interface UIState {
@@ -143,15 +158,27 @@ export interface WorkShift {
   id: string;
   user_id: string;
   date: string;          // YYYY-MM-DD
-  start_time: string;    // HH:MM
+  start_time: string;    // HH:MM (zero-length when pay_type='flat')
   end_time: string;      // HH:MM
-  hourly_rate: number;
-  hours_worked: number;
+  hourly_rate: number;   // 0 when pay_type='flat'
+  hours_worked: number;  // 0 when pay_type='flat'
   pay_owed: number;
   notes?: string;
   is_paid: boolean;
   paid_transaction_id?: string;
   paid_at?: string;
+  // Income source (optional for backwards compat — pre-source rows are treated as main/cafe)
+  source_id?: string;
+  source_label?: string;
+  source_type?: IncomeSourceType;
+  pay_type?: PayType;    // defaults to 'hourly'
+  flat_amount?: number;  // pay amount when pay_type='flat'
+  /**
+   * Lifecycle status. Stored explicitly only when 'scheduled' (future shift,
+   * not yet worked). Past/completed shifts have it absent or 'completed'.
+   * 'paid' is derived from is_paid=true regardless.
+   */
+  status?: 'scheduled' | 'completed' | 'paid';
   created_at: string;
   updated_at: string;
 }

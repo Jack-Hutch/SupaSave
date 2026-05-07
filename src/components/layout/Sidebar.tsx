@@ -9,7 +9,7 @@ import {
   BarChart3,
   Settings,
   Link as LinkIcon,
-  Briefcase,
+  Wallet,
 } from 'lucide-react';
 import { CoinLogo } from '../ui/CoinLogo';
 
@@ -19,7 +19,7 @@ const navItems = [
   { to: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
   { to: '/cashflow', icon: TrendingUp, label: 'Cash Flow' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/work', icon: Briefcase, label: 'Work' },
+  { to: '/income', icon: Wallet, label: 'Income' },
   { to: '/connect', icon: LinkIcon, label: 'Connect Bank' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];

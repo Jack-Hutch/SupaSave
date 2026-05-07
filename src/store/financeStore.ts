@@ -16,6 +16,9 @@ import type {
 import { getMerchantStats } from '../utils/analyticsUtils';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { applyTheme as applyThemeConfig } from '../lib/theme';
+import { BUILT_IN_CATEGORIES } from '../lib/categories';
+import { readLocalShifts, writeLocalShifts } from '../lib/localShifts';
+import { addShiftLink, removeShiftLink, getShiftLinkId } from '../utils/shiftUtils';
 import * as financeService from '../services/financeService';
 import { getProvider } from '../providers';
 import { subMonths } from 'date-fns';
@@ -91,12 +94,24 @@ interface FinanceActions {
   addCustomCategory(cat: { name: string; icon: string; color: ColorKey; subcategories: string[] }): Promise<void>;
   updateCustomCategory(id: string, updates: { name?: string; icon?: string; color?: ColorKey; subcategories?: string[] }): Promise<void>;
   deleteCustomCategory(id: string): Promise<void>;
+  /** Edit a built-in category — stores the change as a custom override under the same id */
+  upsertCategoryOverride(id: string, data: { name: string; icon: string; color: ColorKey; subcategories: string[] }): Promise<void>;
+  /** Delete a custom category, or hide a built-in. Restorable via restoreCategory. */
+  deleteCategory(id: string): Promise<void>;
+  /** Restore a hidden built-in by removing the override entirely. */
+  restoreCategory(id: string): Promise<void>;
+  /** Delete/hide many at once. */
+  bulkDeleteCategories(ids: string[]): Promise<void>;
 
   // Work shifts
   addWorkShift(shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>): Promise<void>;
   updateWorkShift(id: string, updates: Partial<Omit<WorkShift, 'id' | 'user_id' | 'created_at'>>): Promise<void>;
   deleteWorkShift(id: string): Promise<void>;
   markShiftPaid(id: string, transactionId?: string): Promise<void>;
+  /** Reverse markShiftPaid: clears shift's paid state AND removes link tag from any linked tx */
+  unmarkShiftPaid(id: string): Promise<void>;
+  /** Link a transaction to a shift (mark shift paid, tag transaction). */
+  linkTransactionToShift(transactionId: string, shiftId: string): Promise<void>;
 
   // Nuclear option
   clearAllLocalAndRemoteData(): Promise<void>;
@@ -207,7 +222,15 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
           financeService.fetchTransactions(userId),
           financeService.fetchMemberships(userId),
           financeService.fetchBankConnection(userId),
-          financeService.fetchWorkShifts(userId),
+          // work_shifts table may not exist yet (migration 002 not run) —
+          // fall back to localStorage so the Income page still works.
+          financeService.fetchWorkShifts(userId).catch((err) => {
+            if (financeService.isMissingTableError(err)) {
+              console.warn('[work_shifts] table missing — loading from localStorage');
+              return readLocalShifts(userId);
+            }
+            throw err;
+          }),
         ]);
 
       const merchants = getMerchantStats(transactions);
@@ -603,6 +626,68 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
     await get().setSettings({ customCategories });
   },
 
+  deleteCategory: async (id) => {
+    const { settings } = get();
+    const list = settings.customCategories ?? [];
+    const isBuiltIn = BUILT_IN_CATEGORIES.some((b) => b.id === id);
+    if (isBuiltIn) {
+      // Hide it via override
+      const existing = list.find((c) => c.id === id);
+      const builtIn = BUILT_IN_CATEGORIES.find((b) => b.id === id)!;
+      const next: CategoryDef = existing
+        ? { ...existing, hidden: true }
+        : { ...builtIn, hidden: true };
+      const customCategories = existing
+        ? list.map((c) => (c.id === id ? next : c))
+        : [...list, next];
+      await get().setSettings({ customCategories });
+    } else {
+      await get().setSettings({ customCategories: list.filter((c) => c.id !== id) });
+    }
+  },
+
+  restoreCategory: async (id) => {
+    const { settings } = get();
+    const list = settings.customCategories ?? [];
+    await get().setSettings({ customCategories: list.filter((c) => c.id !== id) });
+  },
+
+  bulkDeleteCategories: async (ids) => {
+    const { settings } = get();
+    const list = settings.customCategories ?? [];
+    const idSet = new Set(ids);
+    const builtInIds = new Set(BUILT_IN_CATEGORIES.map((b) => b.id));
+
+    // Remove non-built-in customs entirely; for built-ins, upsert hidden=true
+    let next = list.filter((c) => !(idSet.has(c.id) && !builtInIds.has(c.id)));
+    for (const id of ids) {
+      if (!builtInIds.has(id)) continue;
+      const existing = next.find((c) => c.id === id);
+      const builtIn = BUILT_IN_CATEGORIES.find((b) => b.id === id)!;
+      const hiddenRow: CategoryDef = existing ? { ...existing, hidden: true } : { ...builtIn, hidden: true };
+      next = existing ? next.map((c) => (c.id === id ? hiddenRow : c)) : [...next, hiddenRow];
+    }
+    await get().setSettings({ customCategories: next });
+  },
+
+  upsertCategoryOverride: async (id, data) => {
+    const { settings } = get();
+    const list = settings.customCategories ?? [];
+    const existing = list.find((c) => c.id === id);
+    const next: CategoryDef = {
+      id,
+      name: data.name,
+      icon: data.icon,
+      color: data.color,
+      subcategories: data.subcategories,
+      isBuiltIn: existing?.isBuiltIn ?? true, // preserve flag on built-in overrides
+    };
+    const customCategories = existing
+      ? list.map((c) => (c.id === id ? next : c))
+      : [...list, next];
+    await get().setSettings({ customCategories });
+  },
+
   setFilter: (filters) => {
     set((state) => ({
       transactionFilters: { ...state.transactionFilters, ...filters },
@@ -628,23 +713,36 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       updated_at: now,
     };
 
-    set({ workShifts: [optimistic, ...workShifts].sort((a, b) => b.date.localeCompare(a.date)) });
+    const nextLocal = [optimistic, ...workShifts].sort((a, b) => b.date.localeCompare(a.date));
+    set({ workShifts: nextLocal });
 
     if (isSupabaseConfigured) {
       try {
         const saved = await financeService.insertWorkShift({ ...shiftData, user_id: userId });
+        // Merge: keep optimistic fields the DB didn't return (e.g. when migrations
+        // 003/004 haven't been applied, status/source_* columns are missing).
         set((state) => ({
-          workShifts: state.workShifts.map((s) => (s.id === optimistic.id ? saved : s)),
+          workShifts: state.workShifts.map((s) => (s.id === optimistic.id ? { ...optimistic, ...saved } : s)),
         }));
       } catch (err) {
+        // If the table itself is missing (migrations not run) fall back to
+        // localStorage so the page keeps working — the user just doesn't get
+        // cross-device sync until they apply the SQL migrations.
+        if (financeService.isMissingTableError(err)) {
+          console.warn('[work_shifts] table missing — using localStorage fallback');
+          writeLocalShifts(userId, nextLocal);
+          return;
+        }
         set({ workShifts });
         throw err;
       }
+    } else {
+      writeLocalShifts(userId, nextLocal);
     }
   },
 
   updateWorkShift: async (id, updates) => {
-    const { workShifts } = get();
+    const { userId, workShifts } = get();
 
     const updated = workShifts.map((s) =>
       s.id === id ? { ...s, ...updates, updated_at: new Date().toISOString() } : s
@@ -655,34 +753,103 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       try {
         await financeService.updateWorkShift(id, updates);
       } catch (err) {
+        if (financeService.isMissingTableError(err)) {
+          if (userId) writeLocalShifts(userId, updated);
+          return;
+        }
         set({ workShifts });
         throw err;
       }
+    } else if (userId) {
+      writeLocalShifts(userId, updated);
     }
   },
 
   deleteWorkShift: async (id) => {
-    const { workShifts } = get();
-
-    set({ workShifts: workShifts.filter((s) => s.id !== id) });
+    const { userId, workShifts } = get();
+    const next = workShifts.filter((s) => s.id !== id);
+    set({ workShifts: next });
 
     if (isSupabaseConfigured) {
       try {
         await financeService.deleteWorkShift(id);
       } catch (err) {
+        if (financeService.isMissingTableError(err)) {
+          if (userId) writeLocalShifts(userId, next);
+          return;
+        }
         set({ workShifts });
         throw err;
+      }
+    } else if (userId) {
+      writeLocalShifts(userId, next);
+    }
+  },
+
+  unmarkShiftPaid: async (id) => {
+    const { workShifts, transactions } = get();
+    const shift = workShifts.find((s) => s.id === id);
+    if (!shift) return;
+
+    const linkedTxId = shift.paid_transaction_id;
+
+    await get().updateWorkShift(id, {
+      is_paid: false,
+      paid_transaction_id: undefined,
+      paid_at: undefined,
+      status: undefined,
+    });
+
+    // Strip the shift-link tag from the transaction (don't change its
+    // category — the user may have intentionally categorized it as Income).
+    if (linkedTxId) {
+      const tx = transactions.find((t) => t.id === linkedTxId);
+      if (tx && getShiftLinkId(tx.tags) === id) {
+        await get().updateTransaction(linkedTxId, { tags: removeShiftLink(tx.tags) }, { silent: true });
       }
     }
   },
 
+  linkTransactionToShift: async (transactionId, shiftId) => {
+    // This is the reverse-direction entry point: from a transaction, link to
+    // an unpaid completed shift. Internally identical to markShiftPaid.
+    await get().markShiftPaid(shiftId, transactionId);
+  },
+
   markShiftPaid: async (id, transactionId) => {
     const now = new Date().toISOString();
+    const { transactions, workShifts } = get();
+
+    // Update the shift first
     await get().updateWorkShift(id, {
       is_paid: true,
       paid_transaction_id: transactionId,
       paid_at: now,
+      status: 'paid',
     });
+
+    // If a transaction was linked, also update IT: tag it back to the shift
+    // and ensure it's marked as income with the right category. The category
+    // defaults to "Income"; if the shift's source has its own name we keep
+    // that as the category override (e.g. "Cafe") so reports group it nicely.
+    if (transactionId) {
+      const tx = transactions.find((t) => t.id === transactionId);
+      const shift = workShifts.find((s) => s.id === id);
+      if (tx) {
+        // Best-effort: tag the txn so we can show the back-reference badge.
+        // The category becomes "Income" so it shows up in income totals.
+        const newTags = addShiftLink(tx.tags, id);
+        const updates: Partial<typeof tx> = {
+          tags: newTags,
+          is_income: true,
+          category: 'Income',
+        };
+        // Use silent: true so a Supabase column issue doesn't roll the txn back.
+        // The shift-side update already succeeded.
+        void shift;
+        await get().updateTransaction(transactionId, updates, { silent: true });
+      }
+    }
   },
 
   clearAllLocalAndRemoteData: async () => {

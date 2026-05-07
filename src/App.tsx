@@ -15,7 +15,7 @@ import { Login } from './pages/auth/Login';
 import { Signup } from './pages/auth/Signup';
 import { NotFound } from './pages/NotFound';
 import { Landing } from './pages/Landing';
-import { Work } from './pages/Work';
+import { Income } from './pages/Income';
 
 export function App() {
   return (
@@ -45,11 +45,12 @@ export function App() {
               <Route path="cashflow" element={<CashFlow />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<Settings />} />
-              <Route path="work" element={<Work />} />
+              <Route path="income" element={<Income />} />
               <Route path="connect" element={<ConnectBank />} />
             </Route>
 
             {/* Legacy redirects */}
+            <Route path="/work" element={<Navigate to="/income" replace />} />
             <Route path="/connect-bank" element={<Navigate to="/connect" replace />} />
             <Route path="/auth/login" element={<Navigate to="/login" replace />} />
             <Route path="/auth/signup" element={<Navigate to="/signup" replace />} />

@@ -302,17 +302,69 @@ export async function fetchWorkShifts(userId: string): Promise<WorkShift[]> {
   return (data || []) as unknown as WorkShift[];
 }
 
+// Columns added by migrations 003/004. If those migrations haven't been run
+// yet on a user's Supabase project, the insert/update will fail with "column
+// does not exist". We retry without those fields so basic shift saving still
+// works — the user just doesn't get the extra features until they run the SQL.
+const OPTIONAL_SHIFT_COLS = [
+  'source_id', 'source_label', 'source_type',
+  'pay_type', 'flat_amount', 'status',
+] as const;
+
+function stripOptional<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out = { ...obj };
+  for (const k of OPTIONAL_SHIFT_COLS) delete (out as Record<string, unknown>)[k];
+  return out;
+}
+
+export function isMissingTableError(err: unknown): boolean {
+  const e = err as { message?: string; code?: string; details?: string; hint?: string };
+  const msg = `${e?.message ?? ''} ${e?.details ?? ''} ${e?.hint ?? ''}`.toLowerCase();
+  const code = e?.code ?? '';
+  if (['42P01', 'PGRST205', 'PGRST302'].includes(code)) return true;
+  return (
+    (msg.includes('relation') && msg.includes('does not exist')) ||
+    (msg.includes('table') && msg.includes('not')) ||
+    (msg.includes('schema cache') && msg.includes('table'))
+  );
+}
+
+function isMissingColumnError(err: unknown): boolean {
+  const e = err as { message?: string; code?: string; details?: string; hint?: string };
+  const msg     = e?.message ?? '';
+  const details = e?.details ?? '';
+  const hint    = e?.hint ?? '';
+  const code    = e?.code ?? '';
+  const haystack = `${msg} ${details} ${hint}`.toLowerCase();
+
+  // Postgres "undefined column": 42703
+  // PostgREST schema cache miss: PGRST204 (also known as PGRST116/PGRST301 in some versions)
+  if (['42703', 'PGRST204', 'PGRST301', 'PGRST116'].includes(code)) return true;
+  return (
+    haystack.includes('column') && (
+      haystack.includes('does not exist') ||
+      haystack.includes('not found') ||
+      haystack.includes('schema cache')
+    )
+  );
+}
+
 export async function insertWorkShift(
   shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>
 ): Promise<WorkShift> {
   const supabase = getSupabase();
   const now = new Date().toISOString();
+  const payload = { ...shift, created_at: now, updated_at: now };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('work_shifts')
-    .insert({ ...shift, created_at: now, updated_at: now })
-    .select()
-    .single();
+  const sb = supabase as any;
+
+  let { data, error } = await sb.from('work_shifts').insert(payload).select().single();
+
+  if (error && isMissingColumnError(error)) {
+    console.warn('[work_shifts] migration 003/004 not applied — retrying without optional columns');
+    ({ data, error } = await sb.from('work_shifts').insert(stripOptional(payload)).select().single());
+  }
+
   if (error) throw error;
   return data as unknown as WorkShift;
 }
@@ -322,11 +374,17 @@ export async function updateWorkShift(
   updates: Partial<Omit<WorkShift, 'id' | 'user_id' | 'created_at'>>
 ): Promise<void> {
   const supabase = getSupabase();
+  const payload = { ...updates, updated_at: new Date().toISOString() };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
-    .from('work_shifts')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id);
+  const sb = supabase as any;
+
+  let { error } = await sb.from('work_shifts').update(payload).eq('id', id);
+
+  if (error && isMissingColumnError(error)) {
+    console.warn('[work_shifts] migration 003/004 not applied — retrying without optional columns');
+    ({ error } = await sb.from('work_shifts').update(stripOptional(payload)).eq('id', id));
+  }
+
   if (error) throw error;
 }
 
