@@ -10,18 +10,17 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Card } from '../components/ui/Card';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { validateUpToken } from '../lib/upTokenSession';
+import { validateUpToken, getUpTokenIfConfigured } from '../lib/upTokenSession';
 import { formatCurrency } from '../lib/utils';
 import type { BankProvider } from '../types';
 
 // ─── Env token detection ──────────────────────────────────────────────────────
-// If VITE_UP_API_TOKEN is set and valid we can skip the manual entry form
-// entirely — the Up provider reads it automatically via getUpToken().
-// Only skip the form in local dev — in production every user enters their own token.
-const ENV_UP_TOKEN_READY =
-  import.meta.env.DEV &&
-  !!import.meta.env.VITE_UP_API_TOKEN &&
-  validateUpToken(import.meta.env.VITE_UP_API_TOKEN);
+// If a token is already stored (localStorage from a prior session, or
+// VITE_UP_API_TOKEN in dev) we can skip the manual entry form entirely.
+// Computed on first import; if user clears storage they'll re-render with
+// the form via the page reload.
+const STORED_UP_TOKEN = getUpTokenIfConfigured();
+const ENV_UP_TOKEN_READY = !!STORED_UP_TOKEN;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +39,9 @@ export function ConnectBank() {
   const { success, error: toastError } = useToast();
 
   const [configuring, setConfiguring]   = useState<ConfigureTarget>(null);
-  const [upToken, setUpToken]           = useState('');
+  // Prefill with any token already saved in localStorage / env so the user
+  // doesn't have to re-paste it every time.
+  const [upToken, setUpToken]           = useState(STORED_UP_TOKEN ?? '');
   const [showToken, setShowToken]       = useState(false);
   const [connecting, setConnecting]     = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
