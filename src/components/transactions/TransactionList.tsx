@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ArrowLeftRight, CreditCard, Banknote } from 'lucide-react';
-import type { Transaction, TransactionFilters, CategoryDef } from '../../types';
+import type { Transaction, TransactionFilters, CategoryDef, WorkShift } from '../../types';
 import { getCategoryBadgeClass } from '../../lib/categories';
 import { TransactionItem } from './TransactionItem';
 import { EmptyState } from '../ui/EmptyState';
@@ -24,6 +24,12 @@ interface TransactionListProps {
   onAdd?:                () => void;
   maxItems?:             number;
   customCategories?:     CategoryDef[];
+  selectionMode?:        boolean;
+  selectedIds?:          Set<string>;
+  onToggleSelect?:       (txId: string) => void;
+  onToggleSelectGroup?:  (txIds: string[]) => void;
+  unpaidShifts?:         WorkShift[];
+  onLinkToShift?:        (txId: string, shiftId: string) => void;
 }
 
 // ─── Filter ───────────────────────────────────────────────────────────────────
@@ -245,6 +251,12 @@ export function TransactionList({
   onAdd,
   maxItems,
   customCategories,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectGroup,
+  unpaidShifts,
+  onLinkToShift,
 }: TransactionListProps) {
   const [page, setPage]           = useState(1);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -334,6 +346,14 @@ export function TransactionList({
                     className="overflow-hidden"
                   >
                     <div className="space-y-0.5 py-0.5">
+                      {selectionMode && onToggleSelectGroup && items.length > 1 && (
+                        <button
+                          onClick={() => onToggleSelectGroup(items.map((t) => t.id))}
+                          className="w-full text-left text-[10px] uppercase tracking-wider font-semibold text-foreground-subtle hover:text-accent transition-colors px-3 py-1"
+                        >
+                          {items.every((t) => selectedIds?.has(t.id)) ? '— deselect group —' : '+ select group'}
+                        </button>
+                      )}
                       {items.map((tx, i) => (
                         <TransactionItem
                           key={tx.id}
@@ -345,6 +365,11 @@ export function TransactionList({
                           onAddToSubscription={onAddToSubscription}
                           index={i}
                           customCategories={customCategories}
+                          selectionMode={selectionMode}
+                          selected={selectedIds?.has(tx.id) ?? false}
+                          onToggleSelect={onToggleSelect}
+                          unpaidShifts={unpaidShifts}
+                          onLinkToShift={onLinkToShift}
                         />
                       ))}
                     </div>

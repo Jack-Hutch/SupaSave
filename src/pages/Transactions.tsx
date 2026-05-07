@@ -2,13 +2,14 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format, addMonths } from 'date-fns';
-import { Plus, Search, X, Filter, Settings2 } from 'lucide-react';
+import { Plus, Search, X, Filter, Settings2, CheckSquare } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { TransactionList } from '../components/transactions/TransactionList';
 import { TransactionSheet } from '../components/transactions/TransactionSheet';
 import { CategoryManager } from '../components/transactions/CategoryManager';
+import { BulkActionBar } from '../components/transactions/BulkActionBar';
 import { SubscriptionSheet } from '../components/subscriptions/SubscriptionSheet';
 import type { SubscriptionPrefill } from '../components/subscriptions/SubscriptionSheet';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -93,6 +94,26 @@ export function Transactions() {
   const customCategories = settings.customCategories ?? [];
   const allCategories    = useMemo(() => getAllCategories(customCategories), [customCategories]);
 
+  const memberships     = useFinanceStore((s) => s.memberships);
+  const workShifts      = useFinanceStore((s) => s.workShifts);
+  const linkTransactionToShift = useFinanceStore((s) => s.linkTransactionToShift);
+
+  // Pool of unpaid completed shifts for the "link to shift" picker on income transactions.
+  const unpaidShifts = useMemo(
+    () => workShifts.filter((s) => !s.is_paid && s.status !== 'scheduled')
+                    .sort((a, b) => b.date.localeCompare(a.date)),
+    [workShifts],
+  );
+
+  const handleLinkToShift = async (txId: string, shiftId: string) => {
+    try {
+      await linkTransactionToShift(txId, shiftId);
+      success('Transaction linked to shift');
+    } catch (err) {
+      toastError((err as { message?: string })?.message ?? 'Failed to link');
+    }
+  };
+
   const [sheetOpen,           setSheetOpen]           = useState(false);
   const [editingTx,           setEditingTx]           = useState<Transaction | null>(null);
   const [deleteId,            setDeleteId]            = useState<string | null>(null);
@@ -100,6 +121,30 @@ export function Transactions() {
   const [showDateSource,      setShowDateSource]      = useState(false);
   const [groupBy,             setGroupBy]             = useState<GroupBy>('date');
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+
+  // Bulk select
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
+
+  const exitSelection = () => { setSelectionMode(false); setSelectedIds(new Set()); };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectGroup = (ids: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = ids.every((id) => next.has(id));
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else             ids.forEach((id) => next.add(id));
+      return next;
+    });
+  };
 
   // "Add as subscription" sheet state
   const [subSheetOpen,   setSubSheetOpen]   = useState(false);
@@ -164,6 +209,39 @@ export function Transactions() {
       toastError((err as { message?: string })?.message || 'Failed to add subscription');
       throw err;
     }
+  };
+
+  // ─── Bulk actions ────────────────────────────────────────────────
+  const bulkAssignCategory = async (category: string) => {
+    const ids = Array.from(selectedIds);
+    await Promise.all(ids.map((id) => updateTx(id, { category }, { silent: true })));
+    success(`Updated ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`);
+    exitSelection();
+  };
+
+  const bulkLinkSubscription = async (membershipId: string) => {
+    const ids = Array.from(selectedIds);
+    await Promise.all(ids.map((id) => {
+      const tx = transactions.find((t) => t.id === id);
+      if (!tx) return Promise.resolve();
+      return updateTx(id, { tags: addSubLink(tx.tags, membershipId) }, { silent: true });
+    }));
+    success(`Linked ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`);
+    exitSelection();
+  };
+
+  const bulkAddTag = async (tag: string) => {
+    if (!tag.trim()) return;
+    const ids = Array.from(selectedIds);
+    await Promise.all(ids.map((id) => {
+      const tx = transactions.find((t) => t.id === id);
+      if (!tx) return Promise.resolve();
+      const existingTags = tx.tags ?? [];
+      if (existingTags.includes(tag)) return Promise.resolve();
+      return updateTx(id, { tags: [...existingTags, tag] }, { silent: true });
+    }));
+    success(`Tagged ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`);
+    exitSelection();
   };
 
   const handleAdd  = () => { setEditingTx(null); setSheetOpen(true); };
@@ -345,6 +423,15 @@ export function Transactions() {
             <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-accent border-2 border-canvas pointer-events-none" />
           )}
         </div>
+        <Button
+          variant={selectionMode ? 'default' : 'outline'}
+          size="icon"
+          onClick={() => selectionMode ? exitSelection() : setSelectionMode(true)}
+          aria-label={selectionMode ? 'Exit selection' : 'Select multiple'}
+          title={selectionMode ? 'Exit selection mode' : 'Select multiple'}
+        >
+          <CheckSquare className="h-4 w-4" />
+        </Button>
         <Button onClick={handleAdd} size="sm">
           <Plus className="h-4 w-4" />
           Add
@@ -517,8 +604,29 @@ export function Transactions() {
           onAddToSubscription={handleAddToSubscription}
           onAdd={handleAdd}
           customCategories={customCategories}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectGroup={toggleSelectGroup}
+          unpaidShifts={unpaidShifts}
+          onLinkToShift={handleLinkToShift}
         />
       </motion.div>
+
+      {/* ── Bulk action bar ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {selectionMode && (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            memberships={memberships}
+            customCategories={customCategories}
+            onCancel={exitSelection}
+            onAssignCategory={bulkAssignCategory}
+            onLinkSubscription={bulkLinkSubscription}
+            onAddTag={bulkAddTag}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Modals ──────────────────────────────────────────────────── */}
       <TransactionSheet

@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Pencil, Trash2, CalendarPlus } from 'lucide-react';
-import type { Transaction, CategoryDef } from '../../types';
+import { Pencil, Trash2, CalendarPlus, Check, Briefcase } from 'lucide-react';
+import type { Transaction, CategoryDef, WorkShift } from '../../types';
 import { getCategoryBadgeClass, getCategoryDef } from '../../lib/categories';
 import { formatCurrency, formatRelativeDate } from '../../lib/utils';
 import { CategoryPickerPopover } from './CategoryPickerPopover';
+import { ShiftPickerPopover } from './ShiftPickerPopover';
 import { isLinkedToSubscription } from '../../utils/subscriptionUtils';
+import { isLinkedToShift, getShiftLinkId } from '../../utils/shiftUtils';
 
 interface TransactionItemProps {
   transaction:           Transaction;
@@ -16,6 +18,12 @@ interface TransactionItemProps {
   currency?:             string;
   index?:                number;
   customCategories?:     CategoryDef[];
+  selectionMode?:        boolean;
+  selected?:             boolean;
+  onToggleSelect?:       (txId: string) => void;
+  /** Pool of unpaid completed shifts; if provided, shows a "link to shift" action on income tx */
+  unpaidShifts?:         WorkShift[];
+  onLinkToShift?:        (txId: string, shiftId: string) => void;
 }
 
 // Row entrance — slides up + fades in
@@ -43,10 +51,17 @@ export function TransactionItem({
   currency = 'AUD',
   index: _index,
   customCategories,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
+  unpaidShifts,
+  onLinkToShift,
 }: TransactionItemProps) {
   const [hovered,    setHovered]    = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [shiftPickerOpen, setShiftPickerOpen] = React.useState(false);
   const badgeRef = React.useRef<HTMLButtonElement>(null);
+  const shiftBtnRef = React.useRef<HTMLButtonElement>(null);
 
   // Touch devices never fire hover, so action buttons are always visible
   const alwaysShowActions = React.useMemo(
@@ -62,8 +77,14 @@ export function TransactionItem({
   const badgeCls       = getCategoryBadgeClass(transaction.category, customCategories);
   const catIcon        = catDef?.icon ?? '';
   const isSubscription = isLinkedToSubscription(transaction.tags);
+  const linkedShiftId  = getShiftLinkId(transaction.tags);
+  const hasShiftLink   = isLinkedToShift(transaction.tags);
 
-  const hasActions = !!(onEdit || onDelete || onAddToSubscription);
+  const hasActions = !!(onEdit || onDelete || onAddToSubscription || (onLinkToShift && transaction.is_income));
+
+  const handleRowClick = () => {
+    if (selectionMode && onToggleSelect) onToggleSelect(transaction.id);
+  };
 
   return (
     // Single root element — CategoryPickerPopover portals to document.body so
@@ -73,17 +94,32 @@ export function TransactionItem({
       layout
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
-      className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-default transition-colors hover:bg-surface-raised"
+      onClick={handleRowClick}
+      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
+        selectionMode
+          ? 'cursor-pointer ' + (selected ? 'bg-accent/10' : 'hover:bg-surface-raised')
+          : 'cursor-default hover:bg-surface-raised'
+      }`}
       style={{ willChange: 'transform, opacity' }}
     >
-      {/* Avatar / merchant initial */}
+      {/* Avatar / checkbox */}
       <motion.div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised text-sm font-semibold text-foreground-muted select-none overflow-hidden"
-        animate={{ scale: hovered ? 1.06 : 1 }}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full select-none overflow-hidden text-sm font-semibold ${
+          selectionMode && selected
+            ? 'bg-accent text-accent-fg'
+            : 'bg-surface-raised text-foreground-muted'
+        }`}
+        animate={{ scale: hovered && !selectionMode ? 1.06 : 1 }}
         transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
         style={{ willChange: 'transform' }}
       >
-        {transaction.merchant_logo ? (
+        {selectionMode ? (
+          selected ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <span className="block w-4 h-4 rounded-full border-2 border-foreground-subtle" />
+          )
+        ) : transaction.merchant_logo ? (
           <img
             src={transaction.merchant_logo}
             alt={transaction.merchant_name}
@@ -112,10 +148,14 @@ export function TransactionItem({
           )}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
-          {/* Clickable category badge — opens inline picker */}
+          {/* Clickable category badge — opens inline picker (disabled in selection mode) */}
           <button
             ref={badgeRef}
-            onClick={() => onCategoryChange && setPickerOpen((v) => !v)}
+            onClick={(e) => {
+              if (selectionMode) return;
+              e.stopPropagation();
+              if (onCategoryChange) setPickerOpen((v) => !v);
+            }}
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeCls} ${
               onCategoryChange
                 ? 'cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow active:scale-95'
@@ -135,6 +175,15 @@ export function TransactionItem({
               title="Linked to a subscription"
             >
               🔁
+            </span>
+          )}
+          {hasShiftLink && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400"
+              title="Linked to a shift"
+            >
+              <Briefcase className="h-2.5 w-2.5" />
+              shift
             </span>
           )}
           <span className="text-[11px] text-foreground-subtle">
@@ -158,8 +207,8 @@ export function TransactionItem({
           {sign}{formatCurrency(Math.abs(transaction.amount), currency)}
         </motion.span>
 
-        {/* Action buttons — always visible on touch, hover-reveal on desktop */}
-        {hasActions && (
+        {/* Action buttons — hidden in selection mode */}
+        {hasActions && !selectionMode && (
           <div
             className={`flex items-center gap-1 transition-opacity duration-150 ${
               alwaysShowActions || hovered ? 'opacity-100' : 'opacity-0'
@@ -186,6 +235,18 @@ export function TransactionItem({
                 <CalendarPlus className="h-3.5 w-3.5" />
               </motion.button>
             )}
+            {onLinkToShift && transaction.is_income && !linkedShiftId && (
+              <motion.button
+                ref={shiftBtnRef}
+                onClick={(e) => { e.stopPropagation(); setShiftPickerOpen((v) => !v); }}
+                whileTap={{ scale: 0.88 }}
+                className="rounded p-1 text-foreground-subtle hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                aria-label="Link to shift"
+                title="Link to a logged shift"
+              >
+                <Briefcase className="h-3.5 w-3.5" />
+              </motion.button>
+            )}
             {onDelete && (
               <motion.button
                 onClick={() => onDelete(transaction.id)}
@@ -209,6 +270,18 @@ export function TransactionItem({
           onSelect={(cat) => onCategoryChange(transaction.id, cat)}
           currentCategory={transaction.category}
           customCategories={customCategories}
+        />
+      )}
+
+      {/* Shift picker — opens from the briefcase action button */}
+      {onLinkToShift && unpaidShifts && (
+        <ShiftPickerPopover
+          anchorRef={shiftBtnRef}
+          isOpen={shiftPickerOpen}
+          onClose={() => setShiftPickerOpen(false)}
+          shifts={unpaidShifts}
+          onSelect={(shiftId) => { onLinkToShift(transaction.id, shiftId); setShiftPickerOpen(false); }}
+          currency={currency}
         />
       )}
     </motion.div>
