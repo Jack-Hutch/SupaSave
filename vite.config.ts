@@ -44,7 +44,23 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         cleanupOutdatedCaches: true,
+        // Take over from the previous SW on the very next page load instead
+        // of waiting for every tab to close. Combined with autoUpdate this
+        // means a single hard-refresh ships the new code to the user.
+        skipWaiting: true,
+        clientsClaim: true,
+        // Prefer network for HTML so the entry shell can never be stuck on
+        // a stale revision; fall back to cache only when offline.
+        navigateFallback: null,
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              networkTimeoutSeconds: 4,
+            },
+          },
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
             handler: 'NetworkFirst',
