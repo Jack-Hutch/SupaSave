@@ -6,7 +6,7 @@ import {
   ArrowLeftRight,
   CreditCard,
   TrendingUp,
-  BarChart3,
+  Briefcase,
   Settings,
 } from 'lucide-react';
 
@@ -15,7 +15,7 @@ const navItems = [
   { to: '/transactions', icon: ArrowLeftRight, label: 'Txns' },
   { to: '/subscriptions', icon: CreditCard, label: 'Subs' },
   { to: '/cashflow', icon: TrendingUp, label: 'Flow' },
-  { to: '/analytics', icon: BarChart3, label: 'Stats' },
+  { to: '/work', icon: Briefcase, label: 'Work' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

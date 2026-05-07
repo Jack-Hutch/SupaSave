@@ -15,6 +15,7 @@ import { Login } from './pages/auth/Login';
 import { Signup } from './pages/auth/Signup';
 import { NotFound } from './pages/NotFound';
 import { Landing } from './pages/Landing';
+import { Work } from './pages/Work';
 
 export function App() {
   return (
@@ -44,6 +45,7 @@ export function App() {
               <Route path="cashflow" element={<CashFlow />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="work" element={<Work />} />
               <Route path="connect" element={<ConnectBank />} />
             </Route>
 

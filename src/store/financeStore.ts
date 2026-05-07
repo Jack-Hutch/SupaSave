@@ -11,6 +11,7 @@ import type {
   BankProvider,
   CategoryDef,
   ColorKey,
+  WorkShift,
 } from '../types';
 import { getMerchantStats } from '../utils/analyticsUtils';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -45,6 +46,7 @@ interface FinanceState {
   settings: UserSettings;
   transactionFilters: TransactionFilters;
   cashFlowState: CashFlowState;
+  workShifts: WorkShift[];
 
   // UI
   loading: boolean;
@@ -90,6 +92,12 @@ interface FinanceActions {
   updateCustomCategory(id: string, updates: { name?: string; icon?: string; color?: ColorKey; subcategories?: string[] }): Promise<void>;
   deleteCustomCategory(id: string): Promise<void>;
 
+  // Work shifts
+  addWorkShift(shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>): Promise<void>;
+  updateWorkShift(id: string, updates: Partial<Omit<WorkShift, 'id' | 'user_id' | 'created_at'>>): Promise<void>;
+  deleteWorkShift(id: string): Promise<void>;
+  markShiftPaid(id: string, transactionId?: string): Promise<void>;
+
   // Nuclear option
   clearAllLocalAndRemoteData(): Promise<void>;
 
@@ -130,6 +138,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   settings: defaultSettings,
   transactionFilters: defaultFilters,
   cashFlowState: defaultCashFlowState,
+  workShifts: [],
   loading: false,
   syncing: false,
   error: null,
@@ -180,6 +189,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       settings: defaultSettings,
       transactionFilters: defaultFilters,
       cashFlowState: defaultCashFlowState,
+      workShifts: [],
       loading: false,
       syncing: false,
       error: null,
@@ -190,13 +200,14 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   fetchFinanceData: async (userId: string) => {
     set({ loading: true, error: null });
     try {
-      const [profile, accounts, transactions, memberships, bankConnection] =
+      const [profile, accounts, transactions, memberships, bankConnection, workShifts] =
         await Promise.all([
           financeService.fetchProfile(userId),
           financeService.fetchAccounts(userId),
           financeService.fetchTransactions(userId),
           financeService.fetchMemberships(userId),
           financeService.fetchBankConnection(userId),
+          financeService.fetchWorkShifts(userId),
         ]);
 
       const merchants = getMerchantStats(transactions);
@@ -228,6 +239,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
         merchants,
         memberships,
         bankConnection,
+        workShifts,
         budgets: profile?.budget_by_category ?? {},
         settings: profile?.settings ? { ...defaultSettings, ...profile.settings } : defaultSettings,
         loading: false,
@@ -601,6 +613,76 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
     set((state) => ({
       cashFlowState: { ...state.cashFlowState, ...updates },
     }));
+  },
+
+  addWorkShift: async (shiftData) => {
+    const { userId, workShifts } = get();
+    if (!userId) throw new Error('Not authenticated');
+
+    const now = new Date().toISOString();
+    const optimistic: WorkShift = {
+      ...shiftData,
+      id: generateId(),
+      user_id: userId,
+      created_at: now,
+      updated_at: now,
+    };
+
+    set({ workShifts: [optimistic, ...workShifts].sort((a, b) => b.date.localeCompare(a.date)) });
+
+    if (isSupabaseConfigured) {
+      try {
+        const saved = await financeService.insertWorkShift({ ...shiftData, user_id: userId });
+        set((state) => ({
+          workShifts: state.workShifts.map((s) => (s.id === optimistic.id ? saved : s)),
+        }));
+      } catch (err) {
+        set({ workShifts });
+        throw err;
+      }
+    }
+  },
+
+  updateWorkShift: async (id, updates) => {
+    const { workShifts } = get();
+
+    const updated = workShifts.map((s) =>
+      s.id === id ? { ...s, ...updates, updated_at: new Date().toISOString() } : s
+    );
+    set({ workShifts: updated });
+
+    if (isSupabaseConfigured) {
+      try {
+        await financeService.updateWorkShift(id, updates);
+      } catch (err) {
+        set({ workShifts });
+        throw err;
+      }
+    }
+  },
+
+  deleteWorkShift: async (id) => {
+    const { workShifts } = get();
+
+    set({ workShifts: workShifts.filter((s) => s.id !== id) });
+
+    if (isSupabaseConfigured) {
+      try {
+        await financeService.deleteWorkShift(id);
+      } catch (err) {
+        set({ workShifts });
+        throw err;
+      }
+    }
+  },
+
+  markShiftPaid: async (id, transactionId) => {
+    const now = new Date().toISOString();
+    await get().updateWorkShift(id, {
+      is_paid: true,
+      paid_transaction_id: transactionId,
+      paid_at: now,
+    });
   },
 
   clearAllLocalAndRemoteData: async () => {

@@ -138,3 +138,20 @@ export interface DashboardStats {
   netCashFlow: number;
   transactionCount: number;
 }
+
+export interface WorkShift {
+  id: string;
+  user_id: string;
+  date: string;          // YYYY-MM-DD
+  start_time: string;    // HH:MM
+  end_time: string;      // HH:MM
+  hourly_rate: number;
+  hours_worked: number;
+  pay_owed: number;
+  notes?: string;
+  is_paid: boolean;
+  paid_transaction_id?: string;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
+}

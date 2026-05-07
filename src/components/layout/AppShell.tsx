@@ -11,6 +11,7 @@ const AMBIENT: Record<string, { x: number; y: number }> = {
   '/subscriptions': { x: 60, y: 55 },
   '/cashflow':      { x: 80, y: 22 },
   '/analytics':     { x: 65, y: 68 },
+  '/work':          { x: 40, y: 30 },
   '/connect':       { x: 25, y: 65 },
   '/settings':      { x: 12, y: 55 },
 };

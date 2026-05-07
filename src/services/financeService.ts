@@ -6,6 +6,7 @@ import type {
   Profile,
   BankConnection,
   UserSettings,
+  WorkShift,
 } from '../types';
 
 // ============================================================
@@ -282,5 +283,55 @@ export async function deleteBankConnection(userId: string): Promise<void> {
     .from('bank_connections')
     .delete()
     .eq('user_id', userId);
+  if (error) throw error;
+}
+
+// ============================================================
+// WORK SHIFTS
+// ============================================================
+
+export async function fetchWorkShifts(userId: string): Promise<WorkShift[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('work_shifts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as WorkShift[];
+}
+
+export async function insertWorkShift(
+  shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>
+): Promise<WorkShift> {
+  const supabase = getSupabase();
+  const now = new Date().toISOString();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('work_shifts')
+    .insert({ ...shift, created_at: now, updated_at: now })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as unknown as WorkShift;
+}
+
+export async function updateWorkShift(
+  id: string,
+  updates: Partial<Omit<WorkShift, 'id' | 'user_id' | 'created_at'>>
+): Promise<void> {
+  const supabase = getSupabase();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('work_shifts')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteWorkShift(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.from('work_shifts').delete().eq('id', id);
   if (error) throw error;
 }
