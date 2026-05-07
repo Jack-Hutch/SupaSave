@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Plus, Pencil, Trash2, Check, X, Lock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, RotateCcw, ChevronDown, ChevronUp, CheckSquare, Square, Eye } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -9,6 +9,7 @@ import { useToast } from '../../hooks/useToast';
 import {
   BUILT_IN_CATEGORIES,
   getAllCategories,
+  getAllCategoriesIncludingHidden,
   COLOR_CLASSES,
   COLOR_KEYS,
 } from '../../lib/categories';
@@ -259,200 +260,316 @@ interface CategoryManagerProps {
 }
 
 export function CategoryManager({ isOpen, onClose, inline }: CategoryManagerProps) {
-  const settings             = useFinanceStore((s) => s.settings);
-  const addCustomCategory    = useFinanceStore((s) => s.addCustomCategory);
-  const updateCustomCategory = useFinanceStore((s) => s.updateCustomCategory);
-  const deleteCustomCategory = useFinanceStore((s) => s.deleteCustomCategory);
-  const { success }          = useToast();
+  const settings               = useFinanceStore((s) => s.settings);
+  const addCustomCategory      = useFinanceStore((s) => s.addCustomCategory);
+  const updateCustomCategory   = useFinanceStore((s) => s.updateCustomCategory);
+  const upsertCategoryOverride = useFinanceStore((s) => s.upsertCategoryOverride);
+  const deleteCategory         = useFinanceStore((s) => s.deleteCategory);
+  const restoreCategory        = useFinanceStore((s) => s.restoreCategory);
+  const bulkDeleteCategories   = useFinanceStore((s) => s.bulkDeleteCategories);
+  const { success }            = useToast();
 
   const customCategories = settings.customCategories ?? [];
-  const allCategories    = getAllCategories(customCategories);
+  const visible = getAllCategories(customCategories);
+  const all     = getAllCategoriesIncludingHidden(customCategories);
+  const hidden  = all.filter((c) => c.hidden);
 
-  const [showNewForm,   setShowNewForm]   = useState(false);
-  const [editingId,     setEditingId]     = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [showBuiltIn,   setShowBuiltIn]   = useState(false);
+  const isBuiltIn      = (id: string) => BUILT_IN_CATEGORIES.some((b) => b.id === id);
+  const isOverridden   = (id: string) =>
+    customCategories.some((c) => c.id === id) && isBuiltIn(id);
+
+  const [showNewForm,    setShowNewForm]    = useState(false);
+  const [editingId,      setEditingId]      = useState<string | null>(null);
+  const [confirmDelete,  setConfirmDelete]  = useState<string | null>(null);
+  const [showHidden,     setShowHidden]     = useState(false);
+  const [selectionMode,  setSelectionMode]  = useState(false);
+  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set());
+  const [confirmBulk,    setConfirmBulk]    = useState(false);
+
+  const exitSelection = () => { setSelectionMode(false); setSelectedIds(new Set()); };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(visible.map((c) => c.id)));
 
   const handleCreate = async (data: { name: string; icon: string; color: ColorKey; subcategories: string[] }) => {
-    const exists = allCategories.some((c) => c.name.toLowerCase() === data.name.toLowerCase());
+    const exists = visible.some((c) => c.name.toLowerCase() === data.name.toLowerCase());
     if (exists) return;
     await addCustomCategory(data);
     success(`"${data.name}" added`);
     setShowNewForm(false);
   };
 
-  const handleUpdate = async (id: string, data: { name: string; icon: string; color: ColorKey; subcategories: string[] }) => {
-    await updateCustomCategory(id, data);
-    success('Category updated');
+  const handleSaveEdit = async (id: string, data: { name: string; icon: string; color: ColorKey; subcategories: string[] }) => {
+    if (isBuiltIn(id)) {
+      await upsertCategoryOverride(id, data);
+    } else {
+      await updateCustomCategory(id, data);
+    }
+    success(`"${data.name}" updated`);
     setEditingId(null);
   };
 
   const handleDelete = async (id: string) => {
-    const cat = customCategories.find((c) => c.id === id);
-    await deleteCustomCategory(id);
+    const cat = all.find((c) => c.id === id);
+    await deleteCategory(id);
     if (cat) success(`"${cat.name}" deleted`);
     setConfirmDelete(null);
   };
 
-  const content = (
-    <div className="p-5 space-y-6">
+  const handleResetOverride = async (id: string) => {
+    await restoreCategory(id);
+    success('Reset to default');
+  };
 
-        {/* ── Custom categories ──────────────────────────────────────── */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-foreground-subtle uppercase tracking-wider">
-              My Categories
-            </h3>
-            {!showNewForm && (
-              <Button size="sm" variant="outline" onClick={() => { setShowNewForm(true); setEditingId(null); }}>
-                <Plus className="h-3.5 w-3.5" /> New category
-              </Button>
-            )}
-          </div>
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    await bulkDeleteCategories(ids);
+    success(`Deleted ${ids.length} categor${ids.length === 1 ? 'y' : 'ies'}`);
+    setConfirmBulk(false);
+    exitSelection();
+  };
 
-          <div className="space-y-2">
-            {/* New-category form */}
-            <AnimatePresence initial={false}>
-              {showNewForm && (
-                <CategoryForm
-                  key="new"
-                  onSave={handleCreate}
-                  onCancel={() => setShowNewForm(false)}
-                />
-              )}
-            </AnimatePresence>
+  const renderRow = (cat: CategoryDef, opts: { isHidden: boolean }) => {
+    const editing       = editingId === cat.id;
+    const confirming    = confirmDelete === cat.id;
+    const overridden    = isOverridden(cat.id);
+    const selected      = selectedIds.has(cat.id);
 
-            {/* Existing custom categories */}
-            {customCategories.length === 0 && !showNewForm && (
-              <div className="rounded-xl border border-dashed border-border-base py-8 text-center">
-                <p className="text-sm text-foreground-subtle">No custom categories yet.</p>
-                <p className="text-xs text-foreground-subtle mt-1">Create one to organise your spending your way.</p>
-              </div>
-            )}
+    if (editing) {
+      return (
+        <CategoryForm
+          initial={cat}
+          onSave={(data) => handleSaveEdit(cat.id, data)}
+          onCancel={() => setEditingId(null)}
+        />
+      );
+    }
+    if (confirming) {
+      return (
+        <div className="flex items-center gap-3 rounded-xl border border-expense/30 bg-expense/5 px-4 py-3">
+          <span className="flex-1 text-sm text-foreground">
+            Delete <span className="font-semibold">"{cat.name}"</span>?
+            {isBuiltIn(cat.id) ? ' You can restore it from "Hidden" later.' : ' Transactions keep their category name.'}
+          </span>
+          <Button size="sm" variant="destructive" onClick={() => handleDelete(cat.id)}>Delete</Button>
+          <Button size="sm" variant="outline" onClick={() => setConfirmDelete(null)}>Keep</Button>
+        </div>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => { if (selectionMode) toggleSelect(cat.id); }}
+        className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors text-left ${
+          opts.isHidden
+            ? 'border-dashed border-border-base bg-surface/30 opacity-60'
+            : selected
+              ? 'border-accent bg-accent/10'
+              : 'border-border-base bg-surface hover:bg-surface-raised'
+        } ${selectionMode ? 'cursor-pointer' : 'cursor-default'}`}
+      >
+        {selectionMode && (
+          <span className={`flex h-5 w-5 items-center justify-center rounded-md border-2 shrink-0 ${
+            selected ? 'bg-accent border-accent text-accent-fg' : 'border-foreground-subtle'
+          }`}>
+            {selected ? <Check className="h-3.5 w-3.5" /> : null}
+          </span>
+        )}
 
-            <AnimatePresence initial={false}>
-              {customCategories.map((cat) => (
-                <motion.div
-                  key={cat.id}
-                  layout
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4, height: 0, overflow: 'hidden' }}
-                  transition={SECTION_SPRING}
-                  className="space-y-2"
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold shrink-0 ${COLOR_CLASSES[cat.color].badge}`}>
+          {cat.icon} {cat.name}
+        </span>
+
+        {cat.subcategories.length > 0 && (
+          <span className="text-xs text-foreground-subtle">
+            {cat.subcategories.length} subcategories
+          </span>
+        )}
+
+        {overridden && !opts.isHidden && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-accent">edited</span>
+        )}
+        {opts.isHidden && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-foreground-subtle">hidden</span>
+        )}
+        {!isBuiltIn(cat.id) && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-foreground-subtle">custom</span>
+        )}
+
+        <div className="flex-1" />
+
+        {!selectionMode && (
+          <>
+            {opts.isHidden ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleResetOverride(cat.id); }}
+                className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
+                aria-label={`Restore ${cat.name}`}
+                title="Restore"
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <>
+                {overridden && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleResetOverride(cat.id); }}
+                    className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
+                    aria-label={`Reset ${cat.name} to default`}
+                    title="Reset to default"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setShowNewForm(false); setConfirmDelete(null); }}
+                  className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
+                  aria-label={`Edit ${cat.name}`}
                 >
-                  {editingId === cat.id ? (
-                    <CategoryForm
-                      initial={cat}
-                      onSave={(data) => handleUpdate(cat.id, data)}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  ) : confirmDelete === cat.id ? (
-                    /* Inline delete confirmation */
-                    <div className="flex items-center gap-3 rounded-xl border border-expense/30 bg-expense/5 px-4 py-3">
-                      <span className="flex-1 text-sm text-foreground">
-                        Delete <span className="font-semibold">"{cat.name}"</span>? Transactions keep their category name.
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleDelete(cat.id)}
-                      >
-                        Delete
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setConfirmDelete(null)}
-                      >
-                        Keep
-                      </Button>
-                    </div>
-                  ) : (
-                    /* Row */
-                    <div className="flex items-center gap-3 rounded-xl border border-border-base bg-surface px-4 py-3 hover:bg-surface-raised transition-colors">
-                      {/* Badge preview */}
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold shrink-0 ${COLOR_CLASSES[cat.color].badge}`}>
-                        {cat.icon} {cat.name}
-                      </span>
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(cat.id); setEditingId(null); }}
+                  className="rounded-lg p-1.5 text-foreground-subtle hover:text-expense hover:bg-expense/10 transition-colors"
+                  aria-label={`Delete ${cat.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </button>
+    );
+  };
 
-                      {/* Subcategory count */}
-                      {cat.subcategories.length > 0 && (
-                        <span className="text-xs text-foreground-subtle">
-                          {cat.subcategories.length} subcategories
-                        </span>
-                      )}
+  const content = (
+    <div className="p-5 space-y-4">
+      {/* ── Toolbar ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold text-foreground-subtle uppercase tracking-wider">
+          Categories ({visible.length})
+        </h3>
+        <div className="flex items-center gap-2">
+          {selectionMode ? (
+            <>
+              <button
+                onClick={selectAll}
+                className="text-xs text-foreground-muted hover:text-foreground transition-colors"
+              >
+                Select all
+              </button>
+              {selectedIds.size > 0 && (
+                <Button size="sm" variant="destructive" onClick={() => setConfirmBulk(true)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete ({selectedIds.size})
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={exitSelection}>
+                <X className="h-3.5 w-3.5" />
+                Done
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="outline" onClick={() => { setSelectionMode(true); setShowNewForm(false); setEditingId(null); }}>
+                <CheckSquare className="h-3.5 w-3.5" />
+                Select
+              </Button>
+              {!showNewForm && (
+                <Button size="sm" variant="outline" onClick={() => { setShowNewForm(true); setEditingId(null); }}>
+                  <Plus className="h-3.5 w-3.5" /> New
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
-                      <div className="flex-1" />
+      {/* ── Bulk-delete confirm ─────────────────────────────────────── */}
+      {confirmBulk && (
+        <div className="flex items-center gap-3 rounded-xl border border-expense/30 bg-expense/5 px-4 py-3">
+          <span className="flex-1 text-sm text-foreground">
+            Delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'}? Built-in ones can be restored later.
+          </span>
+          <Button size="sm" variant="destructive" onClick={handleBulkDelete}>Delete all</Button>
+          <Button size="sm" variant="outline" onClick={() => setConfirmBulk(false)}>Cancel</Button>
+        </div>
+      )}
 
-                      {/* Actions */}
-                      <button
-                        onClick={() => { setEditingId(cat.id); setShowNewForm(false); setConfirmDelete(null); }}
-                        className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
-                        aria-label={`Edit ${cat.name}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => { setConfirmDelete(cat.id); setEditingId(null); }}
-                        className="rounded-lg p-1.5 text-foreground-subtle hover:text-expense hover:bg-expense/10 transition-colors"
-                        aria-label={`Delete ${cat.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
+      {/* ── New-category form ───────────────────────────────────────── */}
+      <AnimatePresence initial={false}>
+        {showNewForm && (
+          <CategoryForm
+            key="new"
+            onSave={handleCreate}
+            onCancel={() => setShowNewForm(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Unified list ────────────────────────────────────────────── */}
+      <div className="space-y-2">
+        {visible.length === 0 && !showNewForm && (
+          <div className="rounded-xl border border-dashed border-border-base py-8 text-center">
+            <p className="text-sm text-foreground-subtle">No categories.</p>
+            <p className="text-xs text-foreground-subtle mt-1">Add one with the New button.</p>
           </div>
-        </section>
+        )}
+        <AnimatePresence initial={false}>
+          {visible.map((cat) => (
+            <motion.div
+              key={cat.id}
+              layout
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4, height: 0, overflow: 'hidden' }}
+              transition={SECTION_SPRING}
+            >
+              {renderRow(cat, { isHidden: false })}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-        {/* ── Built-in categories (collapsible reference) ────────────── */}
-        <section>
+      {/* ── Hidden built-ins (collapsible) ──────────────────────────── */}
+      {hidden.length > 0 && (
+        <div>
           <button
             type="button"
-            onClick={() => setShowBuiltIn((v) => !v)}
-            className="flex w-full items-center justify-between mb-3 group"
+            onClick={() => setShowHidden((v) => !v)}
+            className="flex w-full items-center justify-between text-xs font-semibold text-foreground-subtle uppercase tracking-wider hover:text-foreground-muted transition-colors py-2"
           >
-            <h3 className="text-xs font-semibold text-foreground-subtle uppercase tracking-wider group-hover:text-foreground-muted transition-colors">
-              Built-in Categories ({BUILT_IN_CATEGORIES.length})
-            </h3>
-            <motion.div
-              animate={{ rotate: showBuiltIn ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-              className="text-foreground-subtle"
-            >
+            <span>Hidden ({hidden.length})</span>
+            <motion.div animate={{ rotate: showHidden ? 180 : 0 }} transition={{ duration: 0.2 }}>
               <ChevronDown className="h-4 w-4" />
             </motion.div>
           </button>
-
           <AnimatePresence initial={false}>
-            {showBuiltIn && (
+            {showHidden && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.25 }}
-                className="overflow-hidden"
+                className="overflow-hidden space-y-2"
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {BUILT_IN_CATEGORIES.map((cat) => (
-                    <div
-                      key={cat.id}
-                      className="flex items-center gap-2.5 rounded-lg border border-border-base bg-surface/50 px-3 py-2"
-                    >
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${COLOR_CLASSES[cat.color].badge}`}>
-                        {cat.icon} {cat.name}
-                      </span>
-                      <Lock className="h-3 w-3 text-foreground-subtle ml-auto shrink-0" aria-label="Built-in, read-only" />
-                    </div>
-                  ))}
-                </div>
+                {hidden.map((cat) => (
+                  <div key={cat.id}>{renderRow(cat, { isHidden: true })}</div>
+                ))}
               </motion.div>
             )}
           </AnimatePresence>
-        </section>
+        </div>
+      )}
     </div>
   );
 

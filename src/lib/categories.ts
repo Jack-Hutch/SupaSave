@@ -124,9 +124,31 @@ export const COLOR_HEX: Record<ColorKey, string> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Merge built-in + custom categories in one ordered list. */
+/**
+ * Merge built-in + custom categories into one ordered list, with hidden ones
+ * filtered out. Custom rows that share an id with a built-in act as overrides.
+ */
 export function getAllCategories(customCategories?: CategoryDef[]): CategoryDef[] {
-  return [...BUILT_IN_CATEGORIES, ...(customCategories ?? [])];
+  return getAllCategoriesIncludingHidden(customCategories).filter((c) => !c.hidden);
+}
+
+/**
+ * Same as getAllCategories but keeps hidden ones — for the manager UI where
+ * the user needs to see hidden built-ins to restore them.
+ */
+export function getAllCategoriesIncludingHidden(customCategories?: CategoryDef[]): CategoryDef[] {
+  const customs = customCategories ?? [];
+  const builtIns = BUILT_IN_CATEGORIES.map((b) => {
+    const override = customs.find((c) => c.id === b.id);
+    return override ? { ...b, ...override } : b;
+  });
+  const newCustoms = customs.filter((c) => !BUILT_IN_CATEGORIES.some((b) => b.id === c.id));
+  return [...builtIns, ...newCustoms];
+}
+
+/** Is this category id one of the built-in defaults? */
+export function isBuiltInCategoryId(id: string): boolean {
+  return BUILT_IN_CATEGORIES.some((b) => b.id === id);
 }
 
 /** Find a category by name or id. */
