@@ -6,7 +6,8 @@ import { Plus, Search, X, Filter, Settings2 } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
-import { TransactionList } from '../components/transactions/TransactionList';
+import { TransactionList, applyFilters } from '../components/transactions/TransactionList';
+import { TransactionsDataTable } from '../components/transactions/TransactionsDataTable';
 import { TransactionSheet } from '../components/transactions/TransactionSheet';
 import { CategoryManager } from '../components/transactions/CategoryManager';
 import { SubscriptionSheet } from '../components/subscriptions/SubscriptionSheet';
@@ -67,10 +68,13 @@ function toSubIcon(txCategory: string): string {
 
 const SOURCES = ['', 'manual', 'up', 'mock'];
 
-const GROUP_OPTIONS: { id: GroupBy; label: string }[] = [
+type ViewMode = GroupBy | 'table';
+
+const GROUP_OPTIONS: { id: ViewMode; label: string }[] = [
   { id: 'date',     label: 'Date'     },
   { id: 'category', label: 'Category' },
   { id: 'payment',  label: 'Payment'  },
+  { id: 'table',    label: 'Table'    },
 ];
 
 export function Transactions() {
@@ -100,7 +104,7 @@ export function Transactions() {
   const [deleteId,            setDeleteId]            = useState<string | null>(null);
   const [deleting,            setDeleting]            = useState(false);
   const [showDateSource,      setShowDateSource]      = useState(false);
-  const [groupBy,             setGroupBy]             = useState<GroupBy>('date');
+  const [groupBy,             setGroupBy]             = useState<ViewMode>('date');
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   // "Add as subscription" sheet state
@@ -495,25 +499,46 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* ── Transaction list ─────────────────────────────────────────── */}
+      {/* ── Transaction list / table ─────────────────────────────────── */}
       <motion.div
         layoutId={SHARED_ID.cardTransactions}
         layout
         transition={sharedTransition}
         style={{ borderRadius: 12 }}
       >
-        <TransactionList
-          transactions={transactions}
-          filters={filters}
-          currency={currency}
-          groupBy={groupBy}
-          onEdit={handleEdit}
-          onDelete={setDeleteId}
-          onCategoryChange={handleCategoryChange}
-          onAddToSubscription={handleAddToSubscription}
-          onAdd={handleAdd}
-          customCategories={customCategories}
-        />
+        {groupBy === 'table' ? (
+          <TransactionsDataTable
+            transactions={applyFilters(transactions, filters)}
+            currency={currency}
+            customCategories={customCategories}
+            onRowClick={handleEdit}
+            onBulkDelete={async (ids) => {
+              try {
+                await Promise.all(ids.map((id) => deleteTx(id)));
+                success(`${ids.length} transaction${ids.length === 1 ? '' : 's'} deleted`);
+              } catch (err) {
+                toastError((err as { message?: string })?.message ?? 'Bulk delete failed');
+              }
+            }}
+            onBulkRecategorize={(ids) => {
+              const first = transactions.find((t) => t.id === ids[0]);
+              if (first) handleEdit(first);
+            }}
+          />
+        ) : (
+          <TransactionList
+            transactions={transactions}
+            filters={filters}
+            currency={currency}
+            groupBy={groupBy}
+            onEdit={handleEdit}
+            onDelete={setDeleteId}
+            onCategoryChange={handleCategoryChange}
+            onAddToSubscription={handleAddToSubscription}
+            onAdd={handleAdd}
+            customCategories={customCategories}
+          />
+        )}
       </motion.div>
 
       {/* ── Modals ──────────────────────────────────────────────────── */}

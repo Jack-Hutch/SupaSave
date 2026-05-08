@@ -28,7 +28,7 @@ interface TransactionListProps {
 
 // ─── Filter ───────────────────────────────────────────────────────────────────
 
-function applyFilters(txs: Transaction[], filters?: TransactionFilters): Transaction[] {
+export function applyFilters(txs: Transaction[], filters?: TransactionFilters): Transaction[] {
   if (!filters) return txs;
   return txs.filter((tx) => {
     if (

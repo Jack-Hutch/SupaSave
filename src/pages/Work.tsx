@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
 import { formatCurrency } from '../lib/utils';
+import { WorkCalendar } from '../components/work/WorkCalendar';
 import type { WorkShift, Transaction } from '../types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -446,6 +447,7 @@ export function Work() {
   const [showForm, setShowForm] = useState(false);
   const [editingShift, setEditingShift] = useState<WorkShift | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [prefillDate, setPrefillDate] = useState<string | undefined>(undefined);
 
   // Current month key
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -536,7 +538,7 @@ export function Work() {
           </div>
         </div>
         <button
-          onClick={() => { setEditingShift(null); setShowForm(true); }}
+          onClick={() => { setEditingShift(null); setPrefillDate(undefined); setShowForm(true); }}
           className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white shadow transition-opacity hover:opacity-90"
           style={{ background: 'var(--accent)' }}
         >
@@ -563,6 +565,7 @@ export function Work() {
             </div>
             <ShiftForm
               userId={userId}
+              initial={prefillDate ? { date: prefillDate } : undefined}
               onSave={handleSave}
               onCancel={() => setShowForm(false)}
             />
@@ -622,6 +625,17 @@ export function Work() {
           accent="#10b981"
         />
       </div>
+
+      {/* Calendar */}
+      <WorkCalendar
+        shifts={workShifts}
+        currency={currency}
+        onSelectDate={(d) => {
+          setEditingShift(null);
+          setPrefillDate(d);
+          setShowForm(true);
+        }}
+      />
 
       {/* Shift list */}
       {workShifts.length === 0 ? (

@@ -228,6 +228,7 @@ export function Dashboard() {
                   budget={budget}
                   spent={categoryTotals[category] || 0}
                   currency={currency}
+                  customCategories={customCategories}
                 />
               ))}
             </div>
