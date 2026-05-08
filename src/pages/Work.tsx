@@ -16,8 +16,10 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { formatCurrency } from '../lib/utils';
 import { WorkCalendar } from '../components/work/WorkCalendar';
+import { WorkSetupBanner, isMissingWorkShiftsTable } from '../components/work/WorkSetupBanner';
 import type { WorkShift, Transaction } from '../types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -126,8 +128,10 @@ function ShiftForm({ initial, onSave, onCancel, userId }: ShiftFormProps) {
         paid_transaction_id: initial?.paid_transaction_id,
         paid_at: initial?.paid_at,
       });
-    } catch {
-      setErr('Failed to save shift. Please try again.');
+    } catch (e) {
+      const msg = (e as { message?: string })?.message;
+      console.error('[Work] save shift failed:', e);
+      setErr(msg ? `Failed to save shift: ${msg}` : 'Failed to save shift. Please try again.');
       setSaving(false);
     }
   }
@@ -448,6 +452,28 @@ export function Work() {
   const [editingShift, setEditingShift] = useState<WorkShift | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [prefillDate, setPrefillDate] = useState<string | undefined>(undefined);
+  const [needsMigration, setNeedsMigration] = useState(false);
+
+  // Probe once at mount: if the work_shifts table doesn't exist in Supabase,
+  // surface the migration banner immediately rather than waiting for a save to fail.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sb = getSupabase();
+        const { error } = await sb.from('work_shifts').select('id').limit(1);
+        if (!cancelled && error && isMissingWorkShiftsTable(error)) {
+          setNeedsMigration(true);
+        }
+      } catch (err) {
+        if (!cancelled && isMissingWorkShiftsTable(err)) setNeedsMigration(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Current month key
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -487,12 +513,17 @@ export function Work() {
   }
 
   async function handleSave(data: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>) {
-    if (editingShift) {
-      await updateWorkShift(editingShift.id, data);
-      setEditingShift(null);
-    } else {
-      await addWorkShift(data);
-      setShowForm(false);
+    try {
+      if (editingShift) {
+        await updateWorkShift(editingShift.id, data);
+        setEditingShift(null);
+      } else {
+        await addWorkShift(data);
+        setShowForm(false);
+      }
+    } catch (err) {
+      if (isMissingWorkShiftsTable(err)) setNeedsMigration(true);
+      throw err;
     }
   }
 
@@ -546,6 +577,8 @@ export function Work() {
           Add shift
         </button>
       </div>
+
+      {needsMigration && <WorkSetupBanner />}
 
       {/* Add form */}
       <AnimatePresence>

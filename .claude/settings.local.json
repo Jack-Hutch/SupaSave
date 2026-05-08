@@ -48,7 +48,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(npm ls *)",
-      "Bash(ln -s /Users/jackhutchings/Desktop/Projets/SupaSave/.env .env)"
+      "Bash(ln -s /Users/jackhutchings/Desktop/Projets/SupaSave/.env .env)",
+      "Bash(git push *)"
     ]
   }
 }
