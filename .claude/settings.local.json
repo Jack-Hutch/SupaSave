@@ -44,7 +44,9 @@
       "Bash(supabase db *)",
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:5174)",
-      "mcp__c283f338-b10f-4cc4-ae47-f22598ab40a4__notion-fetch"
+      "mcp__c283f338-b10f-4cc4-ae47-f22598ab40a4__notion-fetch",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

@@ -15,6 +15,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
+import { Skeleton } from '../components/ui/Skeleton';
 import { getAllCategories, COLOR_CLASSES } from '../lib/categories';
 import { addSubLink } from '../utils/subscriptionUtils';
 import type { Transaction, Membership } from '../types';
@@ -208,17 +209,17 @@ export function Transactions() {
   if (storeLoading && transactions.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-5 lg:px-6 space-y-4">
-        <div className="h-10 rounded-xl bg-surface-raised animate-pulse" />
-        <div className="h-8  rounded-xl bg-surface-raised animate-pulse" />
+        <Skeleton className="h-10 rounded-xl" />
+        <Skeleton className="h-8 rounded-xl" />
         <div className="rounded-xl border border-border-base bg-surface overflow-hidden divide-y divide-border-base">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="flex items-center gap-3 px-3 py-2.5">
-              <div className="h-9 w-9 rounded-full bg-surface-raised animate-pulse shrink-0" />
+              <Skeleton className="h-9 w-9 rounded-full shrink-0" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3 w-1/3 rounded bg-surface-raised animate-pulse" />
-                <div className="h-2.5 w-1/4 rounded bg-surface-raised animate-pulse" />
+                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="h-2.5 w-1/4" />
               </div>
-              <div className="h-4 w-16 rounded bg-surface-raised animate-pulse" />
+              <Skeleton className="h-4 w-16" />
             </div>
           ))}
         </div>

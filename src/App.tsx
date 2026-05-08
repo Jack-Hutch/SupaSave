@@ -3,7 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { ToastProvider } from './components/ui/Toast';
+import { Toaster } from './components/ui/Sonner';
+import { CommandPalette } from './components/ui/CommandPalette';
 import { Dashboard } from './pages/Dashboard';
 import { Transactions } from './pages/Transactions';
 import { CashFlow } from './pages/CashFlow';
@@ -20,8 +21,9 @@ import { Work } from './pages/Work';
 export function App() {
   return (
     <>
-      <ToastProvider />
+      <Toaster />
       <BrowserRouter>
+        <CommandPalette />
         <AnimatePresence mode="wait">
           <Routes>
             {/* Public landing page */}
