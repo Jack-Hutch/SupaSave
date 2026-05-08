@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Skeleton } from '../components/ui/Skeleton';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { getAllCategories, COLOR_CLASSES } from '../lib/categories';
 import { addSubLink } from '../utils/subscriptionUtils';
 import type { Transaction, Membership } from '../types';
@@ -438,24 +439,18 @@ export function Transactions() {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Select
                   label="Source"
                   value={filters.source}
                   onChange={(e) => setFilter({ source: e.target.value })}
                   options={SOURCES.map((s) => ({ value: s, label: s || 'All sources' }))}
                 />
-                <Input
-                  label="From"
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={(e) => setFilter({ dateFrom: e.target.value })}
-                />
-                <Input
-                  label="To"
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={(e) => setFilter({ dateTo: e.target.value })}
+                <DateRangePicker
+                  label="Date range"
+                  from={filters.dateFrom}
+                  to={filters.dateTo}
+                  onChange={({ from, to }) => setFilter({ dateFrom: from, dateTo: to })}
                 />
               </div>
             </div>

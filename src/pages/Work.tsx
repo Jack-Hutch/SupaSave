@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Briefcase,
@@ -241,8 +242,34 @@ interface ShiftRowProps {
 function ShiftRow({ shift, transactions, onEdit, onDelete, onMarkPaid, currency }: ShiftRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [pickerPos, setPickerPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const linkedTx = transactions.find((tx) => tx.id === shift.paid_transaction_id);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const update = () => {
+      const btn = pickerBtnRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const popoverHeight = 200;
+      const padding = 8;
+      const openUp = r.top - popoverHeight - padding > 0;
+      const top = openUp ? r.top - popoverHeight - 4 : r.bottom + 4;
+      setPickerPos({ left: r.left, top, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPickerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pickerOpen]);
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -317,47 +344,62 @@ function ShiftRow({ shift, transactions, onEdit, onDelete, onMarkPaid, currency 
               {/* Actions */}
               <div className="flex gap-2">
                 {!shift.is_paid && (
-                  <div className="flex-1 relative">
+                  <div className="flex-1">
                     <button
+                      ref={pickerBtnRef}
                       onClick={(e) => { e.stopPropagation(); setPickerOpen((v) => !v); }}
                       className="w-full rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity"
                       style={{ background: 'var(--accent)' }}
                     >
                       Mark Paid
                     </button>
-                    <AnimatePresence>
-                      {pickerOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.15 }}
-                          className="absolute bottom-full mb-1 left-0 right-0 z-10 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-xl p-2 space-y-1 max-h-48 overflow-y-auto"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            className="w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-[var(--surface)] text-[var(--foreground)]"
-                            onClick={() => { onMarkPaid(shift.id, undefined); setPickerOpen(false); }}
+                    {pickerOpen && pickerPos && createPortal(
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setPickerOpen(false)}
+                        />
+                        <AnimatePresence>
+                          <motion.div
+                            key="mark-paid-picker"
+                            initial={{ opacity: 0, y: -6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15 }}
+                            style={{
+                              position: 'fixed',
+                              top: pickerPos.top,
+                              left: pickerPos.left,
+                              width: pickerPos.width,
+                            }}
+                            className="z-50 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-xl p-2 space-y-1 max-h-48 overflow-y-auto"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            Mark paid (no transaction)
-                          </button>
-                          <p className="text-xs text-[var(--muted)] px-2 pt-1">Or link to a transaction:</p>
-                          {transactions
-                            .filter((tx) => tx.is_income)
-                            .slice(0, 20)
-                            .map((tx) => (
-                              <button
-                                key={tx.id}
-                                className="w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-[var(--surface)] text-[var(--foreground)]"
-                                onClick={() => { onMarkPaid(shift.id, tx.id); setPickerOpen(false); }}
-                              >
-                                {tx.description} · {formatCurrency(tx.amount, currency)}
-                                <span className="text-[var(--muted)] ml-1">({tx.date})</span>
-                              </button>
-                            ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                            <button
+                              className="w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-[var(--surface)] text-[var(--foreground)]"
+                              onClick={() => { onMarkPaid(shift.id, undefined); setPickerOpen(false); }}
+                            >
+                              Mark paid (no transaction)
+                            </button>
+                            <p className="text-xs text-[var(--muted)] px-2 pt-1">Or link to a transaction:</p>
+                            {transactions
+                              .filter((tx) => tx.is_income)
+                              .slice(0, 20)
+                              .map((tx) => (
+                                <button
+                                  key={tx.id}
+                                  className="w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-[var(--surface)] text-[var(--foreground)]"
+                                  onClick={() => { onMarkPaid(shift.id, tx.id); setPickerOpen(false); }}
+                                >
+                                  {tx.description} · {formatCurrency(tx.amount, currency)}
+                                  <span className="text-[var(--muted)] ml-1">({tx.date})</span>
+                                </button>
+                              ))}
+                          </motion.div>
+                        </AnimatePresence>
+                      </>,
+                      document.body
+                    )}
                   </div>
                 )}
                 {shift.is_paid && (

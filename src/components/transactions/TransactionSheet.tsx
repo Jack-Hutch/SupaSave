@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Input, Textarea } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
+import { CategoryPickerPopover } from './CategoryPickerPopover';
 import { useFinanceStore } from '../../store/financeStore';
 import { getAllCategories, COLOR_CLASSES } from '../../lib/categories';
 import type { Transaction, TransactionSource } from '../../types';
@@ -160,10 +162,9 @@ export function TransactionSheet({
   const badgeClass      = catDef ? COLOR_CLASSES[catDef.color].badge : '';
   const subcatOptions   = catDef?.subcategories ?? [];
 
-  // Expense categories exclude Income; Income mode locks to Income only
-  const categoryOptions = form.is_income
-    ? allCategories.filter((c) => c.name === 'Income')
-    : allCategories.filter((c) => c.name !== 'Income');
+  // Combobox trigger refs/state
+  const catTriggerRef   = useRef<HTMLButtonElement>(null);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
 
   return (
     <Modal
@@ -238,36 +239,28 @@ export function TransactionSheet({
 
         {/* ── Category ── */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-foreground-muted">Category</label>
-            {/* Live badge preview — only shown when a non-default category is selected */}
-            {badgeClass && form.category !== 'Uncategorized' && (
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${badgeClass}`}>
-                {catDef?.icon} {form.category}
-              </span>
-            )}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {categoryOptions.map((cat) => {
-              const active = form.category === cat.name;
-              const cls    = COLOR_CLASSES[cat.color];
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => set({ category: cat.name, subcategory: '' })}
-                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-left transition-colors ${
-                    active
-                      ? `${cls.badge} border-current`
-                      : 'border-border-base bg-surface text-foreground-muted hover:bg-surface-raised'
-                  }`}
-                >
-                  <span className="shrink-0">{cat.icon}</span>
-                  <span className="leading-tight">{cat.name}</span>
-                </button>
-              );
-            })}
-          </div>
+          <label className="text-sm font-medium text-foreground-muted">Category</label>
+          <button
+            ref={catTriggerRef}
+            type="button"
+            disabled={form.is_income}
+            onClick={() => setCatPickerOpen((v) => !v)}
+            className={`flex w-full items-center gap-2 rounded-lg border border-border-base bg-surface px-3 py-2 text-left text-sm transition-colors hover:bg-surface-hover disabled:opacity-60 disabled:cursor-not-allowed ${
+              badgeClass && form.category !== 'Uncategorized' ? '' : 'text-foreground-subtle'
+            }`}
+          >
+            {catDef?.icon && <span className="shrink-0">{catDef.icon}</span>}
+            <span className="flex-1 truncate text-foreground">{form.category}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-foreground-muted" />
+          </button>
+          <CategoryPickerPopover
+            anchorRef={catTriggerRef}
+            isOpen={catPickerOpen}
+            onClose={() => setCatPickerOpen(false)}
+            currentCategory={form.category}
+            customCategories={customCategories}
+            onSelect={(name) => set({ category: name, subcategory: '' })}
+          />
         </div>
 
         {/* ── Subcategory ── */}
