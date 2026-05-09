@@ -43,7 +43,7 @@ interface CardTitleProps {
 
 export function CardTitle({ children, className = '' }: CardTitleProps) {
   return (
-    <h3 className={`text-sm font-semibold text-foreground-muted uppercase tracking-wider ${className}`}>
+    <h3 className={`text-[10.5px] font-semibold text-foreground-subtle uppercase tracking-[0.09em] ${className}`}>
       {children}
     </h3>
   );

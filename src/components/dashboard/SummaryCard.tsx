@@ -68,21 +68,17 @@ export function SummaryCard({
       layout={!!layoutId}
       transition={layoutId ? sharedTransition : undefined}
       style={{ borderRadius: 12 }}
-      className={`rounded-xl border bg-surface p-4 ${borderClass}`}
+      className={`rounded-xl border bg-surface p-4 ${borderClass} relative`}
     >
-      <div className="flex items-start justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-foreground-subtle uppercase tracking-wider truncate">
-            {label}
-          </p>
-          <p className={`mt-1.5 font-mono text-xl font-bold ${colorClass}`}>
-            {formatCurrency(Math.abs(amount), currency)}
-          </p>
-        </div>
-        <div className={`rounded-lg p-2 shrink-0 ${bgClass}`}>
-          <Icon className={`h-4 w-4 ${colorClass}`} />
-        </div>
+      <div className={`absolute top-4 right-4 rounded-lg p-1.5 shrink-0 ${bgClass}`}>
+        <Icon className={`h-4 w-4 ${colorClass}`} />
       </div>
+      <p className="text-[10.5px] font-semibold text-foreground-subtle uppercase tracking-[0.09em] truncate pr-10">
+        {label}
+      </p>
+      <p className={`mt-3 font-mono text-[26px] font-bold leading-none ${colorClass}`}>
+        {formatCurrency(Math.abs(amount), currency)}
+      </p>
       {trend !== undefined && (
         <p className="mt-2 text-xs text-foreground-subtle">
           {trend >= 0 ? '+' : ''}{trend.toFixed(1)}% vs last period

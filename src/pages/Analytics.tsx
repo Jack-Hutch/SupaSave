@@ -205,10 +205,10 @@ export function Analytics() {
                 ].map((s) => (
                   <div
                     key={s.label}
-                    className="rounded-xl border border-border-base bg-surface p-3"
+                    className="rounded-xl border border-border-base bg-surface p-4"
                   >
-                    <p className="text-xs text-foreground-subtle">{s.label}</p>
-                    <p className={`mt-1 font-mono text-base font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-foreground-subtle">{s.label}</p>
+                    <p className={`mt-2.5 font-mono text-[22px] font-bold leading-none ${s.color}`}>{s.value}</p>
                   </div>
                 ))}
               </div>

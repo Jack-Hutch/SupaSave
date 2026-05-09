@@ -473,8 +473,8 @@ export function Subscriptions() {
               }}
               className={`rounded-xl border p-4 ${cls}`}
             >
-              <p className="text-xs font-medium text-foreground-subtle uppercase tracking-wider">{label}</p>
-              <p className={`mt-1.5 font-mono text-xl font-bold ${color}`}>{value}</p>
+              <p className="text-[10.5px] font-semibold text-foreground-subtle uppercase tracking-[0.09em]">{label}</p>
+              <p className={`mt-2.5 font-mono text-[24px] font-bold leading-none ${color}`}>{value}</p>
             </motion.div>
           ))}
         </motion.div>

@@ -12,8 +12,10 @@
   --surface:          17 24 39;
   --surface-raised:   31 41 55;
   --surface-hover:    55 65 81;
+  --surface-sunken:   1 4 14;
   --border-default:   31 41 55;
   --border-subtle:    55 65 81;
+  --border-strong:    74 85 104;
   --foreground:       243 244 246;
   --foreground-muted: 156 163 175;
   --foreground-subtle:107 114 128;
@@ -22,6 +24,14 @@
   --accent-fg:        255 255 255;
   --income:           52 211 153;
   --expense:          248 113 113;
+  --warn:             245 158 11;
+
+  /* ── Full-color tokens (used in inline styles & box-shadows) ── */
+  --income-soft:      rgba(52, 211, 153, 0.12);
+  --expense-soft:     rgba(248, 113, 113, 0.12);
+  --accent-soft:      rgba(99, 102, 241, 0.12);
+  --accent-glow:      rgba(99, 102, 241, 0.25);
+  --warn-soft:        rgba(245, 158, 11, 0.12);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +63,7 @@
     background-color: rgb(var(--canvas));
     color: rgb(var(--foreground));
     min-height: 100vh;
+    font-family: 'Geist', 'Inter', system-ui, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 

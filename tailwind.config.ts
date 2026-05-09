@@ -14,8 +14,10 @@ const config: Config = {
         surface: 'rgb(var(--surface) / <alpha-value>)',
         'surface-raised': 'rgb(var(--surface-raised) / <alpha-value>)',
         'surface-hover': 'rgb(var(--surface-hover) / <alpha-value>)',
+        'surface-sunken': 'rgb(var(--surface-sunken) / <alpha-value>)',
         'border-base': 'rgb(var(--border-default) / <alpha-value>)',
         'border-subtle': 'rgb(var(--border-subtle) / <alpha-value>)',
+        'border-strong': 'rgb(var(--border-strong) / <alpha-value>)',
         foreground: 'rgb(var(--foreground) / <alpha-value>)',
         'foreground-muted': 'rgb(var(--foreground-muted) / <alpha-value>)',
         'foreground-subtle': 'rgb(var(--foreground-subtle) / <alpha-value>)',
@@ -24,6 +26,7 @@ const config: Config = {
         'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
         income: 'rgb(var(--income) / <alpha-value>)',
         expense: 'rgb(var(--expense) / <alpha-value>)',
+        warn: 'rgb(var(--warn) / <alpha-value>)',
 
         // Legacy brand palette kept for any remaining hardcoded usage
         brand: {
@@ -43,7 +46,8 @@ const config: Config = {
 
       // ── Typography ───────────────────────────────────────────────────────
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
+        sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'JetBrains Mono', 'Fira Code', 'monospace'],
       },
 
       // ── Keyframes ────────────────────────────────────────────────────────
