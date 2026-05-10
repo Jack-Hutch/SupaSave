@@ -34,13 +34,13 @@ interface CustomTooltipProps {
 function CustomTooltip({ active, payload, label, currency = 'AUD' }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 shadow-xl">
-      <p className="mb-2 text-xs font-semibold text-gray-400">{label}</p>
+    <div className="rounded-lg border border-border-base bg-surface px-3 py-2 shadow-float">
+      <p className="mb-2 text-xs font-semibold text-foreground-muted">{label}</p>
       {payload.map((item) => (
         <div key={item.dataKey} className="flex items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-            <span className="text-gray-400 capitalize">{item.dataKey}</span>
+            <span className="text-foreground-muted capitalize">{item.dataKey}</span>
           </div>
           <span className="font-mono font-medium" style={{ color: item.color }}>
             {formatCurrency(item.value, currency)}
@@ -56,7 +56,7 @@ export function BarChart({ data, currency = 'AUD', height = 240 }: BarChartProps
     return (
       <div
         style={{ height }}
-        className="flex items-center justify-center text-sm text-gray-500"
+        className="flex items-center justify-center text-sm text-foreground-subtle"
       >
         No data
       </div>
@@ -66,15 +66,15 @@ export function BarChart({ data, currency = 'AUD', height = 240 }: BarChartProps
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RechartsBarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={2}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border-default))" vertical={false} />
         <XAxis
           dataKey="month"
-          tick={{ fill: '#9ca3af', fontSize: 10 }}
+          tick={{ fill: 'rgb(var(--foreground-subtle))', fontSize: 10 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: '#9ca3af', fontSize: 11 }}
+          tick={{ fill: 'rgb(var(--foreground-subtle))', fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v) => `$${Math.round(v)}`}
@@ -83,7 +83,7 @@ export function BarChart({ data, currency = 'AUD', height = 240 }: BarChartProps
         <Tooltip content={<CustomTooltip currency={currency} />} />
         <Legend
           formatter={(value) => (
-            <span className="text-xs text-gray-400 capitalize">{value}</span>
+            <span className="text-xs text-foreground-muted capitalize">{value}</span>
           )}
           iconType="circle"
           iconSize={8}

@@ -44,7 +44,7 @@ export function SubscriptionList({
     <div className="space-y-5">
       {/* Header with Add button */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-foreground-muted">
           {memberships.length} active subscription{memberships.length !== 1 ? 's' : ''}
         </p>
         <Button size="sm" onClick={onAdd} variant="outline">
@@ -59,10 +59,10 @@ export function SubscriptionList({
         return (
           <div key={category}>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-foreground-subtle">
                 {category}
               </h3>
-              <span className="text-xs font-mono text-gray-500">
+              <span className="text-xs font-mono text-foreground-subtle">
                 {formatCurrency(categoryTotal, currency)}/mo
               </span>
             </div>
@@ -82,16 +82,16 @@ export function SubscriptionList({
       })}
 
       {/* Grand total */}
-      <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3 flex items-center justify-between">
+      <div className="rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 flex items-center justify-between">
         <div>
-          <p className="text-xs text-gray-500 font-medium">Total Monthly</p>
-          <p className="text-lg font-mono font-bold text-indigo-400">
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-foreground-subtle">Total Monthly</p>
+          <p className="mt-1 text-[22px] font-mono font-bold text-accent">
             {formatCurrency(grandTotal, currency)}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-500">Yearly equivalent</p>
-          <p className="text-sm font-mono text-gray-300">
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-foreground-subtle">Yearly</p>
+          <p className="mt-1 text-sm font-mono font-semibold text-foreground-muted">
             {formatCurrency(grandTotal * 12, currency)}
           </p>
         </div>

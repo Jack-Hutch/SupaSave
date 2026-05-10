@@ -9,12 +9,12 @@ interface BadgeProps {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-gray-700 text-gray-300',
-  success: 'bg-green-500/15 text-green-400 border border-green-500/20',
-  danger: 'bg-red-500/15 text-red-400 border border-red-500/20',
-  warning: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20',
-  info: 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20',
-  outline: 'border border-gray-700 text-gray-400 bg-transparent',
+  default: 'bg-surface-raised text-foreground-muted',
+  success: 'bg-income/12 text-income border border-income/20',
+  danger:  'bg-expense/12 text-expense border border-expense/20',
+  warning: 'bg-warn/12 text-warn border border-warn/20',
+  info:    'bg-accent/12 text-accent border border-accent/20',
+  outline: 'border border-border-base text-foreground-muted bg-transparent',
 };
 
 export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
