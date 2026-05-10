@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { useLocation, Link } from 'react-router-dom';
-import { LogOut, User, Link as LinkIcon, Settings } from 'lucide-react';
-import { CoinLogo } from '../ui/CoinLogo';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
+import { LogOut, User, Link as LinkIcon, Settings, Bell, Plus, Search } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useAuth, signOut } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
@@ -19,6 +18,7 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { error: toastError } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,38 +35,75 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border-base bg-surface/90 backdrop-blur-md px-4 lg:px-6">
-      <div className="flex items-center gap-3">
-        {/* Mobile logo mark */}
-        <div className="flex lg:hidden items-center gap-2">
-          <CoinLogo size={28} />
-        </div>
-
-        {/*
-          Page title cross-fades with a small vertical offset when the route
-          changes — "wait" mode ensures the exit finishes before enter begins,
-          so both titles are never visible simultaneously.
-        */}
+    <header className="sticky top-0 z-30 flex h-[54px] items-center border-b border-border-base px-8 gap-4"
+      style={{ background: 'rgba(8,9,12,0.82)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}
+    >
+      {/* Breadcrumbs */}
+      <div className="flex items-center gap-2 text-[13px] text-foreground-muted">
+        <span>SupaSave</span>
+        <span className="text-foreground-subtle">/</span>
         <AnimatePresence mode="wait" initial={false}>
-          <motion.h1
+          <motion.span
             key={pageTitle}
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-            transition={
-              reducedMotion
-                ? { duration: 0 }
-                : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }
-            }
-            className="text-sm font-semibold text-foreground"
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            className="font-medium text-foreground"
           >
             {pageTitle}
-          </motion.h1>
+          </motion.span>
         </AnimatePresence>
       </div>
 
+      {/* Global search */}
+      <div
+        className="flex items-center gap-2 h-8 px-3 rounded-lg text-[13px] text-foreground-subtle cursor-text transition-colors"
+        style={{
+          width: 300,
+          background: 'rgb(var(--surface))',
+          border: '1px solid rgb(var(--border-default))',
+        }}
+        onClick={() => {/* could open a search modal */}}
+      >
+        <Search className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1 text-foreground-subtle text-[13px]">Search transactions…</span>
+        <span
+          className="font-mono text-[10.5px] rounded px-1.5 py-0.5"
+          style={{
+            background: 'rgb(var(--surface-sunken))',
+            border: '1px solid rgb(var(--border-default))',
+            color: 'rgb(var(--foreground-subtle))',
+          }}
+        >
+          ⌘K
+        </span>
+      </div>
+
       {/* Right actions */}
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2">
+        {/* Notification bell */}
+        <button
+          className="flex items-center justify-center h-8 w-8 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-raised transition-colors"
+          title="Notifications"
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+
+        {/* Add transaction */}
+        <button
+          onClick={() => navigate('/transactions')}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium text-white transition-colors"
+          style={{
+            background: 'rgb(var(--accent))',
+            boxShadow: '0 0 0 1px rgb(var(--accent)), inset 0 1px 0 rgba(255,255,255,0.12)',
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add transaction
+        </button>
+
+        {/* User menu */}
         {user && (
           <div className="relative">
             <motion.button
@@ -89,30 +126,15 @@ export function Header() {
             <AnimatePresence>
               {menuOpen && (
                 <>
-                  {/* Click-away backdrop */}
                   <div
                     className="fixed inset-0 z-10"
                     onClick={() => setMenuOpen(false)}
                     aria-hidden="true"
                   />
-
-                  {/* Dropdown — scales in from top-right origin */}
                   <motion.div
-                    initial={
-                      reducedMotion
-                        ? { opacity: 0 }
-                        : { opacity: 0, scale: 0.93, y: -8 }
-                    }
-                    animate={
-                      reducedMotion
-                        ? { opacity: 1 }
-                        : { opacity: 1, scale: 1, y: 0 }
-                    }
-                    exit={
-                      reducedMotion
-                        ? { opacity: 0 }
-                        : { opacity: 0, scale: 0.93, y: -8 }
-                    }
+                    initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.93, y: -8 }}
+                    animate={reducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+                    exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.93, y: -8 }}
                     transition={
                       reducedMotion
                         ? { duration: 0 }

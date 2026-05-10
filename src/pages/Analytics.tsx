@@ -47,36 +47,47 @@ export function Analytics() {
   const donutColors = donutData.map(({ name }) => getCategoryHex(name, customCategories));
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-5 lg:px-6 space-y-5">
-      {/*
-        Internal tab bar — uses the same shared-element pill pattern as the
-        sidebar. The accent background slides between tabs instead of
-        re-rendering as a new element each time.
-      */}
-      <div className="flex items-center gap-0 rounded-lg border border-border-base bg-surface p-1 w-fit">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className="relative px-4 py-1.5 text-sm font-medium"
-          >
-            {tab === t.id && (
-              <motion.div
-                layoutId="analytics-tab-bg"
-                className="absolute inset-0 rounded-md bg-accent shadow-sm"
-                transition={TAB_SPRING}
-                style={{ borderRadius: 6 }}
-              />
-            )}
-            <span
-              className={`relative z-10 transition-colors duration-150 ${
-                tab === t.id ? 'text-accent-fg' : 'text-foreground-muted hover:text-foreground'
-              }`}
-            >
-              {t.label}
-            </span>
-          </button>
-        ))}
+    <div className="max-w-5xl mx-auto px-8 py-9 space-y-5">
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <div className="flex items-center gap-3 mb-[6px]">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Analytics</h1>
+          </div>
+          <p className="text-[13.5px] text-foreground-muted">Deep-dive into your spending patterns and trends.</p>
+        </div>
+        <div>
+          {/*
+            Internal tab bar — uses the same shared-element pill pattern as the
+            sidebar. The accent background slides between tabs instead of
+            re-rendering as a new element each time.
+          */}
+          <div className="flex items-center gap-0 rounded-lg border border-border-base bg-surface p-1 w-fit">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="relative px-4 py-1.5 text-sm font-medium"
+              >
+                {tab === t.id && (
+                  <motion.div
+                    layoutId="analytics-tab-bg"
+                    className="absolute inset-0 rounded-md bg-accent shadow-sm"
+                    transition={TAB_SPRING}
+                    style={{ borderRadius: 6 }}
+                  />
+                )}
+                <span
+                  className={`relative z-10 transition-colors duration-150 ${
+                    tab === t.id ? 'text-accent-fg' : 'text-foreground-muted hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/*

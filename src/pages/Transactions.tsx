@@ -207,7 +207,7 @@ export function Transactions() {
   // be invisible — don't flash a skeleton if data is already on screen.
   if (storeLoading && transactions.length === 0) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-5 lg:px-6 space-y-4">
+      <div className="max-w-5xl mx-auto px-8 py-9 space-y-4">
         <div className="h-10 rounded-xl bg-surface-raised animate-pulse" />
         <div className="h-8  rounded-xl bg-surface-raised animate-pulse" />
         <div className="rounded-xl border border-border-base bg-surface overflow-hidden divide-y divide-border-base">
@@ -229,7 +229,7 @@ export function Transactions() {
   // ── Hydration error ──────────────────────────────────────────────
   if (storeError && transactions.length === 0) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-16 lg:px-6 flex flex-col items-center gap-4 text-center">
+      <div className="max-w-5xl mx-auto px-8 py-16 flex flex-col items-center gap-4 text-center">
         <div className="text-3xl">⚠️</div>
         <p className="text-sm font-semibold text-foreground">Failed to load transactions</p>
         <p className="text-xs text-foreground-subtle max-w-sm">{storeError}</p>
@@ -246,7 +246,7 @@ export function Transactions() {
   // ── No data — prompt bank connect or sync ────────────────────────
   if (!storeLoading && transactions.length === 0) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-5 lg:px-6 space-y-4">
+      <div className="max-w-5xl mx-auto px-8 py-9 space-y-4">
         <div className="flex items-center gap-2">
           <Input
             placeholder="Search transactions…"
@@ -305,7 +305,29 @@ export function Transactions() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-5 lg:px-6 space-y-4">
+    <div className="max-w-5xl mx-auto px-8 py-9 space-y-4">
+
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <div className="flex items-center gap-3 mb-[6px]">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Transactions</h1>
+            <span
+              className="font-mono text-[11px] font-medium px-2 py-[3px] rounded-[5px] tracking-[0.02em]"
+              style={{ color: 'rgb(var(--accent))', background: 'var(--accent-soft)' }}
+            >
+              {transactions.length.toLocaleString()} records
+            </span>
+          </div>
+          <p className="text-[13.5px] text-foreground-muted">Every dollar in and out, across all linked accounts.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleAdd}>
+            <Plus className="h-3.5 w-3.5" />
+            Add transaction
+          </Button>
+        </div>
+      </div>
 
       {/* ── Toolbar ─────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2">

@@ -53,7 +53,7 @@ export function CashFlow() {
   const periods: Period[] = ['week', 'month', 'year'];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-5 lg:px-6 space-y-5">
+    <div className="max-w-5xl mx-auto px-8 py-9 space-y-5">
       {/* Period selector — sliding pill indicator */}
       <div className="flex items-center justify-between gap-4">
         <div className="relative flex items-center rounded-lg border border-border-base bg-surface overflow-hidden">

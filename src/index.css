@@ -63,7 +63,7 @@
     background-color: rgb(var(--canvas));
     color: rgb(var(--foreground));
     min-height: 100vh;
-    font-family: 'Geist', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 

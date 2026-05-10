@@ -7,6 +7,26 @@ import { formatCurrency, formatRelativeDate } from '../../lib/utils';
 import { CategoryPickerPopover } from './CategoryPickerPopover';
 import { isLinkedToSubscription } from '../../utils/subscriptionUtils';
 
+// Deterministic color palettes for merchant avatars based on first letter
+const AVATAR_PALETTES = [
+  { bg: '#1f3a5f', fg: '#6cb6ff' }, // blue
+  { bg: '#3a2a4d', fg: '#c692ff' }, // purple
+  { bg: '#2a4a3e', fg: '#4ade80' }, // green
+  { bg: '#4a3a22', fg: '#f5b461' }, // amber
+  { bg: '#28403b', fg: '#6ce5d0' }, // teal
+  { bg: '#4a2c38', fg: '#ff8fb1' }, // pink
+  { bg: '#3a3a3a', fg: '#cfd1d6' }, // neutral
+  { bg: '#2e3a24', fg: '#b6e36b' }, // lime
+];
+
+function getMerchantPalette(name: string): { bg: string; fg: string } {
+  const code = name.toUpperCase().charCodeAt(0) || 65;
+  return AVATAR_PALETTES[(code - 65) % AVATAR_PALETTES.length];
+}
+
+function getMerchantBg(name: string): string { return getMerchantPalette(name).bg; }
+function getMerchantFg(name: string): string { return getMerchantPalette(name).fg; }
+
 interface TransactionItemProps {
   transaction:           Transaction;
   onEdit?:               (tx: Transaction) => void;
@@ -76,12 +96,19 @@ export function TransactionItem({
       className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-default transition-colors hover:bg-surface-raised"
       style={{ willChange: 'transform, opacity' }}
     >
-      {/* Avatar / merchant initial */}
+      {/* Avatar / merchant initial — colored circle matching category */}
       <motion.div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-raised text-sm font-semibold text-foreground-muted select-none overflow-hidden"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-mono font-semibold text-[13px] select-none overflow-hidden"
+        style={{
+          background: isIncome
+            ? 'rgba(74,222,128,0.16)'
+            : getMerchantBg(transaction.merchant_name || transaction.description),
+          color: isIncome ? 'rgb(var(--income))' : getMerchantFg(transaction.merchant_name || transaction.description),
+          border: '1px solid rgba(255,255,255,0.06)',
+          willChange: 'transform',
+        }}
         animate={{ scale: hovered ? 1.06 : 1 }}
         transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-        style={{ willChange: 'transform' }}
       >
         {transaction.merchant_logo ? (
           <img

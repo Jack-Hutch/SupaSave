@@ -46,8 +46,8 @@ const config: Config = {
 
       // ── Typography ───────────────────────────────────────────────────────
       fontFamily: {
-        sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
-        mono: ['Geist Mono', 'JetBrains Mono', 'Fira Code', 'monospace'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
 
       // ── Keyframes ────────────────────────────────────────────────────────

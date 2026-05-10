@@ -457,7 +457,7 @@ export function Settings() {
   const pillSpring = { type: 'spring' as const, stiffness: 400, damping: 32, mass: 0.8 };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-5 lg:px-6">
+    <div className="max-w-5xl mx-auto px-8 py-9">
 
       {/* ── Mobile: horizontal tab strip (above the flex row, full-width) ── */}
       <div className="lg:hidden mb-4">

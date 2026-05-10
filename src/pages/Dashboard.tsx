@@ -33,7 +33,7 @@ const item = {
 };
 
 export function Dashboard() {
-  const { user } = useAuth();
+  useAuth(); // keep auth context hydrated
   const navigate = useNavigate();
   const transactions = useFinanceStore((s) => s.transactions);
   const budgets = useFinanceStore((s) => s.budgets);
@@ -64,20 +64,51 @@ export function Dashboard() {
   const recentTx = transactions.slice(0, 8);
   const currency = settings.currency || 'AUD';
 
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
   return (
     <motion.div
       variants={container}
       initial="hidden"
       animate="show"
-      className="max-w-5xl mx-auto px-4 py-5 lg:px-6 space-y-5"
+      className="max-w-5xl mx-auto px-8 py-9 space-y-5"
     >
+      {/* Page header */}
+      <motion.div variants={item} className="flex items-end justify-between mb-1">
+        <div>
+          <div className="flex items-center gap-3 mb-[6px]">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Dashboard</h1>
+            <span
+              className="font-mono text-[11px] font-medium px-2 py-[3px] rounded-[5px] tracking-[0.02em]"
+              style={{ color: 'rgb(var(--accent))', background: 'var(--accent-soft)' }}
+            >
+              {monthLabel}
+            </span>
+          </div>
+          <p className="text-[13.5px] text-foreground-muted">
+            Your money at a glance — {monthLabel.split(' ')[0]} 1 to {monthLabel.split(' ')[0]} {dayOfMonth}.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {bankConnection?.status === 'connected' && (
+            <Button size="sm" variant="outline" onClick={syncBankTransactions} loading={syncing}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Sync
+            </Button>
+          )}
+        </div>
+      </motion.div>
+
       {/*
         Summary cards — each carries a layoutId that matches the same card
         on the CashFlow page. Navigating Dashboard → Cash Flow makes these
         three cards physically fly from their grid positions here to their
         positions there, with the border lines reshaping to fit.
       */}
-      <motion.div variants={item} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <motion.div variants={item} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <SummaryCard
           layoutId={SHARED_ID.statIncome}
           type="income"
@@ -119,18 +150,11 @@ export function Dashboard() {
         </motion.div>
       )}
 
-      {bankConnection?.status === 'connected' && (
-        <motion.div variants={item} className="flex items-center justify-between">
+      {bankConnection?.status === 'connected' && bankConnection.last_sync_at && (
+        <motion.div variants={item}>
           <p className="text-xs text-foreground-subtle">
-            Last synced:{' '}
-            {bankConnection.last_sync_at
-              ? new Date(bankConnection.last_sync_at).toLocaleString()
-              : 'Never'}
+            Last synced: {new Date(bankConnection.last_sync_at).toLocaleString()}
           </p>
-          <Button size="sm" variant="outline" onClick={syncBankTransactions} loading={syncing}>
-            <RefreshCw className="h-3.5 w-3.5" />
-            Sync
-          </Button>
         </motion.div>
       )}
 

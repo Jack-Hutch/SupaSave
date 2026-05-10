@@ -432,7 +432,31 @@ export function Subscriptions() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-5 lg:px-6 space-y-5">
+    <div className="max-w-5xl mx-auto px-8 py-9 space-y-5">
+
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <div className="flex items-center gap-3 mb-[6px]">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Subscriptions</h1>
+            {memberships.length > 0 && (
+              <span
+                className="font-mono text-[11px] font-medium px-2 py-[3px] rounded-[5px] tracking-[0.02em]"
+                style={{ color: 'rgb(var(--accent))', background: 'var(--accent-soft)' }}
+              >
+                {memberships.length} active
+              </span>
+            )}
+          </div>
+          <p className="text-[13.5px] text-foreground-muted">Track recurring charges and never miss a renewal.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setSheetOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Add subscription
+          </Button>
+        </div>
+      </div>
 
       {/* ── Summary stats ─────────────────────────────────────────── */}
       {memberships.length > 0 && (
