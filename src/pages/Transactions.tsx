@@ -539,6 +539,18 @@ export function Transactions() {
           onAddToSubscription={handleAddToSubscription}
           onAdd={handleAdd}
           customCategories={customCategories}
+          onBulkCategoryChange={async (ids, category) => {
+            await Promise.all(ids.map((id) => handleCategoryChange(id, category)));
+            success(`${ids.length} transaction${ids.length === 1 ? '' : 's'} recategorised`);
+          }}
+          onBulkDelete={async (ids) => {
+            try {
+              await Promise.all(ids.map((id) => deleteTx(id)));
+              success(`${ids.length} transaction${ids.length === 1 ? '' : 's'} deleted`);
+            } catch (err) {
+              toastError((err as { message?: string })?.message ?? 'Failed to delete');
+            }
+          }}
         />
       </motion.div>
 

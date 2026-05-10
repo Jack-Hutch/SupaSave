@@ -36,6 +36,10 @@ interface TransactionItemProps {
   currency?:             string;
   index?:                number;
   customCategories?:     CategoryDef[];
+  /** Selection mode — shows a checkbox on the left */
+  selectable?:           boolean;
+  selected?:             boolean;
+  onSelect?:             () => void;
 }
 
 // Row entrance — slides up + fades in
@@ -63,6 +67,9 @@ export function TransactionItem({
   currency = 'AUD',
   index: _index,
   customCategories,
+  selectable,
+  selected,
+  onSelect,
 }: TransactionItemProps) {
   const [hovered,    setHovered]    = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
@@ -86,16 +93,29 @@ export function TransactionItem({
   const hasActions = !!(onEdit || onDelete || onAddToSubscription);
 
   return (
-    // Single root element — CategoryPickerPopover portals to document.body so
-    // it doesn't sit inside this motion.div, avoiding layout/AnimatePresence issues.
     <motion.div
       variants={rowVariants}
       layout
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
       className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-default transition-colors hover:bg-surface-raised"
-      style={{ willChange: 'transform, opacity' }}
+      style={{
+        willChange: 'transform, opacity',
+        background: selected ? 'var(--accent-soft)' : undefined,
+      }}
     >
+      {/* Checkbox — only shown in selection mode */}
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={!!selected}
+          onChange={onSelect}
+          onClick={(e) => e.stopPropagation()}
+          className="h-3.5 w-3.5 shrink-0 rounded-[3px] cursor-pointer"
+          style={{ accentColor: 'rgb(var(--accent))' }}
+          aria-label="Select transaction"
+        />
+      )}
       {/* Avatar / merchant initial — colored circle matching category */}
       <motion.div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-mono font-semibold text-[13px] select-none overflow-hidden"
