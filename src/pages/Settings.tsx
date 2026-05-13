@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
   Trash2, Plus, X, Bell, BellOff, Target, ShieldAlert,
-  Paintbrush, Moon, Sun, Palette, Check, SlidersHorizontal, Tag,
+  Paintbrush, Moon, Sun, Palette, Check, SlidersHorizontal, Tag, Download,
 } from 'lucide-react';
 import { CategoryManager } from '../components/transactions/CategoryManager';
 import { useFinanceStore } from '../store/financeStore';
@@ -52,13 +52,14 @@ const PRESET_COLORS = [
   { hex: '#f97316', label: 'Orange'  },
 ];
 
-type Section = 'appearance' | 'notifications' | 'budgets' | 'categories' | 'danger';
+type Section = 'appearance' | 'notifications' | 'budgets' | 'categories' | 'install' | 'danger';
 
 const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'appearance',    label: 'Appearance',    icon: Paintbrush  },
   { id: 'notifications', label: 'Notifications', icon: Bell        },
   { id: 'budgets',       label: 'Budgets',       icon: Target      },
   { id: 'categories',   label: 'Categories',    icon: Tag         },
+  { id: 'install',       label: 'Install App',   icon: Download    },
   { id: 'danger',        label: 'Danger Zone',   icon: ShieldAlert },
 ];
 
@@ -369,6 +370,109 @@ function BudgetsPanel({ budgets, categoryTotals, currency, allCategories, onRemo
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+function InstallPanel() {
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+  const { success, error: toastError } = useToast();
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      // iOS Safari
+      (window.navigator as { standalone?: boolean }).standalone === true;
+    setInstalled(isStandalone);
+
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferred(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setDeferred(null);
+    };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferred) return;
+    try {
+      await deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      if (outcome === 'accepted') {
+        success('SupaSave installed');
+        setDeferred(null);
+      }
+    } catch (err) {
+      toastError((err as { message?: string })?.message || 'Install failed');
+    }
+  };
+
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as unknown as { MSStream?: unknown }).MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  const isFirefox = /firefox/i.test(ua);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border-base p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <Download className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">Install SupaSave</p>
+            <p className="text-xs text-foreground-subtle mt-0.5">
+              Install SupaSave as an app on your desktop or device. It runs in its own window, works offline, and launches like any other app.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {installed ? (
+            <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">
+              <Check className="h-4 w-4" />
+              SupaSave is already installed on this device.
+            </div>
+          ) : deferred ? (
+            <Button onClick={handleInstall}>
+              <Download className="h-4 w-4" />
+              Install to desktop
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              <Button disabled>
+                <Download className="h-4 w-4" />
+                Install to desktop
+              </Button>
+              <p className="text-xs text-foreground-subtle">
+                {isIOS || isSafari
+                  ? 'On Safari: tap the Share button, then "Add to Home Screen" (mobile) or "Add to Dock" (macOS Sonoma+).'
+                  : isFirefox
+                  ? 'Firefox doesn’t support installing this site as an app. Try Chrome, Edge, or Brave.'
+                  : 'Look for the install icon in your browser’s address bar, or open the browser menu and choose "Install SupaSave" / "Install app".'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface DangerPanelProps {
   onClear: () => void;
 }
@@ -573,6 +677,8 @@ export function Settings() {
                 {section === 'categories' && (
                   <CategoryManager isOpen={true} onClose={() => {}} inline />
                 )}
+
+                {section === 'install' && <InstallPanel />}
 
                 {section === 'danger' && (
                   <DangerPanel onClear={() => setConfirmClear(true)} />
