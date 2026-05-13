@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Clock, Pencil, Trash2, X, AlertCircle,
-  CheckCircle, AlertTriangle, TrendingUp,
+  Plus, Clock, Pencil, Trash2, AlertCircle,
+  AlertTriangle, TrendingUp, Check,
 } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
 import { useToast } from '../hooks/useToast';
@@ -10,7 +10,7 @@ import { formatCurrency } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import type { WorkShift, Transaction } from '../types';
+import type { WorkShift } from '../types';
 
 // ─── Animation (matches Dashboard stagger) ───────────────────────────────────
 
@@ -136,10 +136,14 @@ function ShiftForm({ initial, userId, onSave, onCancel }: ShiftFormProps) {
         pay_owed: Math.round(pay * 100) / 100,
         notes: notes.trim() || undefined,
         is_paid: initial?.is_paid ?? false,
-        paid_transaction_id: initial?.paid_transaction_id,
-        paid_at: initial?.paid_at,
+        paid_transaction_id: initial?.paid_transaction_id ?? undefined,
+        paid_at: initial?.paid_at ?? undefined,
       });
-    } catch { setErr('Failed to save. Try again.'); setSaving(false); }
+    } catch (e) {
+      const msg = (e as { message?: string })?.message;
+      setErr(msg ? `Error: ${msg}` : 'Failed to save. Try again.');
+      setSaving(false);
+    }
   }
 
   const inputCls = 'w-full rounded-lg border border-border-base bg-canvas px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-colors';
@@ -194,90 +198,6 @@ function ShiftForm({ initial, userId, onSave, onCancel }: ShiftFormProps) {
   );
 }
 
-// ─── Mark Paid Modal ──────────────────────────────────────────────────────────
-
-interface MarkPaidModalProps {
-  shift: WorkShift;
-  transactions: Transaction[];
-  currency: string;
-  onConfirm: (shiftId: string, txId?: string) => Promise<void>;
-  onClose: () => void;
-}
-
-function MarkPaidModal({ shift, transactions, currency, onConfirm, onClose }: MarkPaidModalProps) {
-  const [search, setSearch] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const incomeTxs = useMemo(() =>
-    transactions
-      .filter(tx => tx.is_income)
-      .filter(tx =>
-        !search.trim() ||
-        tx.description.toLowerCase().includes(search.toLowerCase()) ||
-        (tx.merchant_name ?? '').toLowerCase().includes(search.toLowerCase())
-      )
-      .slice(0, 15),
-    [transactions, search]
-  );
-
-  async function handle(txId?: string) {
-    setSaving(true);
-    try { await onConfirm(shift.id, txId); onClose(); }
-    catch { setSaving(false); }
-  }
-
-  return (
-    <div className="p-5 space-y-4">
-      <p className="text-sm text-foreground-subtle">
-        Marking <span className="text-foreground font-medium">{fmtShortDate(shift.date)}</span>
-        {' '}({fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}) as paid —{' '}
-        <span className="font-mono font-bold text-accent">{formatCurrency(shift.pay_owed, currency)}</span>
-      </p>
-
-      <button
-        onClick={() => handle(undefined)} disabled={saving}
-        className="w-full flex items-center gap-3 rounded-lg border border-border-base bg-surface px-4 py-3 text-left hover:bg-surface-raised transition-colors disabled:opacity-50"
-      >
-        <CheckCircle className="h-4 w-4 text-income shrink-0" />
-        <div>
-          <p className="text-sm font-medium text-foreground">Mark paid (no transaction)</p>
-          <p className="text-xs text-foreground-subtle mt-0.5">Just flag this shift as paid</p>
-        </div>
-      </button>
-
-      <div>
-        <p className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-foreground-subtle mb-2">
-          Or link to an income transaction
-        </p>
-        <input
-          type="text" placeholder="Search transactions…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-border-base bg-canvas px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-colors mb-2"
-        />
-        <div className="space-y-0.5 max-h-44 overflow-y-auto rounded-lg border border-border-base bg-surface">
-          {incomeTxs.length === 0
-            ? <p className="text-xs text-foreground-subtle text-center py-6">No income transactions found</p>
-            : incomeTxs.map(tx => (
-              <button
-                key={tx.id} onClick={() => handle(tx.id)} disabled={saving}
-                className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-surface-raised transition-colors disabled:opacity-50"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm text-foreground truncate">{tx.description}</p>
-                  <p className="font-mono text-[11.5px] text-foreground-subtle">{tx.date}</p>
-                </div>
-                <span className="font-mono text-sm font-semibold text-income ml-3 shrink-0">
-                  +{formatCurrency(tx.amount, currency)}
-                </span>
-              </button>
-            ))
-          }
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Shift Row ────────────────────────────────────────────────────────────────
 
 interface ShiftRowProps {
@@ -285,26 +205,38 @@ interface ShiftRowProps {
   currency: string;
   onEdit: (s: WorkShift) => void;
   onDelete: (s: WorkShift) => void;
-  onMarkPaid: (s: WorkShift) => void;
-  onUnmarkPaid: (s: WorkShift) => void;
+  onTogglePaid: (s: WorkShift) => void;
+  toggling: boolean;
 }
 
-function ShiftRow({ shift, currency, onEdit, onDelete, onMarkPaid, onUnmarkPaid }: ShiftRowProps) {
+function ShiftRow({ shift, currency, onEdit, onDelete, onTogglePaid, toggling }: ShiftRowProps) {
   return (
     <motion.div
       layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
       className="group grid items-center gap-4 px-[18px] py-[14px] border-b border-border-base last:border-0 hover:bg-surface-raised transition-colors"
-      style={{ gridTemplateColumns: '14px 1.6fr 80px 110px 1fr' }}
+      style={{ gridTemplateColumns: '28px 1.6fr 80px 110px 1fr' }}
     >
-      {/* Status dot */}
-      <span
-        className="w-2 h-2 rounded-full shrink-0"
+      {/* Inline paid checkbox */}
+      <button
+        onClick={() => onTogglePaid(shift)}
+        disabled={toggling}
+        title={shift.is_paid ? 'Mark unpaid' : 'Mark as paid'}
+        className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-150 disabled:opacity-50"
         style={shift.is_paid
-          ? { background: 'rgb(var(--income))', boxShadow: '0 0 0 4px var(--income-soft)' }
-          : { background: '#4d7cff', boxShadow: '0 0 0 4px rgba(77,124,255,0.12)' }
+          ? {
+              background: 'rgb(var(--income))',
+              borderColor: 'rgb(var(--income))',
+              boxShadow: '0 0 0 3px var(--income-soft)',
+            }
+          : {
+              background: 'transparent',
+              borderColor: 'rgb(var(--border-strong))',
+            }
         }
-      />
+      >
+        {shift.is_paid && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+      </button>
 
       {/* When */}
       <div className="min-w-0">
@@ -329,22 +261,6 @@ function ShiftRow({ shift, currency, onEdit, onDelete, onMarkPaid, onUnmarkPaid 
 
       {/* Actions — hover reveal */}
       <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-        {shift.is_paid ? (
-          <button
-            onClick={() => onUnmarkPaid(shift)}
-            className="h-7 px-2.5 text-xs font-medium rounded-md border border-border-base text-foreground-muted hover:bg-surface hover:text-foreground transition-colors"
-          >
-            Unmark
-          </button>
-        ) : (
-          <button
-            onClick={() => onMarkPaid(shift)}
-            className="h-7 px-2.5 text-xs font-medium rounded-md text-white transition-colors"
-            style={{ background: 'rgb(var(--accent))' }}
-          >
-            Mark paid
-          </button>
-        )}
         <button
           onClick={() => onEdit(shift)}
           className="p-1.5 rounded-md text-foreground-subtle hover:bg-surface hover:text-foreground transition-colors"
@@ -372,11 +288,11 @@ interface MonthGroupProps {
   currency: string;
   onEdit: (s: WorkShift) => void;
   onDelete: (s: WorkShift) => void;
-  onMarkPaid: (s: WorkShift) => void;
-  onUnmarkPaid: (s: WorkShift) => void;
+  onTogglePaid: (s: WorkShift) => void;
+  togglingId: string | null;
 }
 
-function MonthGroup({ monthKey, shifts, currency, onEdit, onDelete, onMarkPaid, onUnmarkPaid }: MonthGroupProps) {
+function MonthGroup({ monthKey, shifts, currency, onEdit, onDelete, onTogglePaid, togglingId }: MonthGroupProps) {
   const [open, setOpen] = useState(true);
 
   const totalHours = shifts.reduce((s, sh) => s + sh.hours_worked, 0);
@@ -438,7 +354,8 @@ function MonthGroup({ monthKey, shifts, currency, onEdit, onDelete, onMarkPaid, 
                   <ShiftRow
                     key={shift.id} shift={shift} currency={currency}
                     onEdit={onEdit} onDelete={onDelete}
-                    onMarkPaid={onMarkPaid} onUnmarkPaid={onUnmarkPaid}
+                    onTogglePaid={onTogglePaid}
+                    toggling={togglingId === shift.id}
                   />
                 ))}
               </AnimatePresence>
@@ -454,7 +371,6 @@ function MonthGroup({ monthKey, shifts, currency, onEdit, onDelete, onMarkPaid, 
 
 export function Work() {
   const workShifts      = useFinanceStore(s => s.workShifts);
-  const transactions    = useFinanceStore(s => s.transactions);
   const userId          = useFinanceStore(s => s.userId);
   const currency        = useFinanceStore(s => s.settings.currency);
   const addWorkShift    = useFinanceStore(s => s.addWorkShift);
@@ -466,7 +382,7 @@ export function Work() {
   const [addOpen, setAddOpen]         = useState(false);
   const [editShift, setEditShift]     = useState<WorkShift | null>(null);
   const [deleteShift, setDeleteShift] = useState<WorkShift | null>(null);
-  const [payShift, setPayShift]       = useState<WorkShift | null>(null);
+  const [togglingId, setTogglingId]   = useState<string | null>(null);
   const [deleting, setDeleting]       = useState(false);
 
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -502,12 +418,22 @@ export function Work() {
     catch { error('Failed to delete shift'); }
     finally { setDeleting(false); }
   }
-  async function handleMarkPaid(shiftId: string, txId?: string) {
-    await markShiftPaid(shiftId, txId); success('Marked as paid');
-  }
-  async function handleUnmarkPaid(shift: WorkShift) {
-    await updateWorkShift(shift.id, { is_paid: false, paid_transaction_id: undefined, paid_at: undefined });
-    success('Unmarked');
+  async function handleTogglePaid(shift: WorkShift) {
+    if (togglingId) return; // debounce double-clicks
+    setTogglingId(shift.id);
+    try {
+      if (shift.is_paid) {
+        await updateWorkShift(shift.id, { is_paid: false, paid_transaction_id: undefined, paid_at: undefined });
+        success('Marked unpaid');
+      } else {
+        await markShiftPaid(shift.id);
+        success('Marked as paid ✓');
+      }
+    } catch (e) {
+      error((e as { message?: string })?.message ?? 'Failed to update shift');
+    } finally {
+      setTogglingId(null);
+    }
   }
 
   if (!userId) {
@@ -623,7 +549,7 @@ export function Work() {
               <MonthGroup
                 key={key} monthKey={key} shifts={grouped[key]} currency={currency}
                 onEdit={setEditShift} onDelete={setDeleteShift}
-                onMarkPaid={setPayShift} onUnmarkPaid={handleUnmarkPaid}
+                onTogglePaid={handleTogglePaid} togglingId={togglingId}
               />
             ))}
           </motion.div>
@@ -638,15 +564,6 @@ export function Work() {
       <Modal isOpen={!!editShift} onClose={() => setEditShift(null)} title="Edit shift" size="sm">
         {editShift && (
           <ShiftForm initial={editShift} userId={userId} onSave={handleEdit} onCancel={() => setEditShift(null)} />
-        )}
-      </Modal>
-
-      <Modal isOpen={!!payShift} onClose={() => setPayShift(null)} title="Mark shift as paid" size="sm">
-        {payShift && (
-          <MarkPaidModal
-            shift={payShift} transactions={transactions} currency={currency}
-            onConfirm={handleMarkPaid} onClose={() => setPayShift(null)}
-          />
         )}
       </Modal>
 
