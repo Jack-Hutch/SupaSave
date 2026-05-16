@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useDeferredValue } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
@@ -32,18 +32,21 @@ export function CashFlow() {
     return 'Last 12 months';
   }, [period, currentDate]);
 
+  // Defer heavy derived computations so the page paints before O(n) work blocks the thread.
+  const deferredTransactions = useDeferredValue(transactions);
+
   const filteredTx = useMemo(() => {
     if (period === 'month') {
       const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
       const end = format(endOfMonth(currentDate), 'yyyy-MM-dd');
-      return transactions.filter((tx) => tx.date >= start && tx.date <= end);
+      return deferredTransactions.filter((tx) => tx.date >= start && tx.date <= end);
     }
-    return transactions;
-  }, [transactions, period, currentDate]);
+    return deferredTransactions;
+  }, [deferredTransactions, period, currentDate]);
 
   const stats = useMemo(() => getDashboardStats(filteredTx), [filteredTx]);
-  const chartData = useMemo(() => getChartSeries(transactions, period), [transactions, period]);
-  const monthlyData = useMemo(() => getMonthlyComparisons(transactions), [transactions]);
+  const chartData = useMemo(() => getChartSeries(deferredTransactions, period), [deferredTransactions, period]);
+  const monthlyData = useMemo(() => getMonthlyComparisons(deferredTransactions), [deferredTransactions]);
 
   const savingsRate =
     stats.totalIncome > 0

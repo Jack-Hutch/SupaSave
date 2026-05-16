@@ -396,7 +396,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   },
 
   addTransaction: async (txData) => {
-    const { userId, transactions, merchants } = get();
+    const { userId, transactions } = get();
     if (!userId) throw new Error('Not authenticated');
 
     const newTx: Transaction = {
@@ -406,11 +406,11 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       updated_at: new Date().toISOString(),
     };
 
-    // Optimistic update
+    // Optimistic update — skip merchant recompute; Analytics recomputes from transactions via useMemo
     const updated = [newTx, ...transactions].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    set({ transactions: updated, merchants: getMerchantStats(updated) });
+    set({ transactions: updated });
 
     if (isSupabaseConfigured) {
       try {
@@ -425,8 +425,8 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
           ),
         }));
       } catch (err) {
-        // Rollback both transactions and merchants
-        set({ transactions, merchants });
+        // Rollback
+        set({ transactions });
         throw err;
       }
     }
@@ -439,11 +439,12 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
     const prev = transactions.find((tx) => tx.id === id);
     if (!prev) return;
 
-    // Optimistic update
+    // Optimistic update — skip merchant recompute for single-tx edits; merchants
+    // are only consumed by Analytics which recomputes from `transactions` via useMemo.
     const updated = transactions.map((tx) =>
       tx.id === id ? { ...tx, ...updates, updated_at: new Date().toISOString() } : tx
     );
-    set({ transactions: updated, merchants: getMerchantStats(updated) });
+    set({ transactions: updated });
 
     if (isSupabaseConfigured) {
       try {
@@ -461,17 +462,18 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   },
 
   deleteTransaction: async (id) => {
-    const { userId, transactions, merchants } = get();
+    const { userId, transactions } = get();
     if (!userId) throw new Error('Not authenticated');
 
     const updated = transactions.filter((tx) => tx.id !== id);
-    set({ transactions: updated, merchants: getMerchantStats(updated) });
+    // Skip merchant recompute on single-tx delete — Analytics recomputes from transactions via useMemo
+    set({ transactions: updated });
 
     if (isSupabaseConfigured) {
       try {
         await financeService.deleteTransaction(id, userId);
       } catch (err) {
-        set({ transactions, merchants });
+        set({ transactions });
         throw err;
       }
     }

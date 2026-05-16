@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format, addMonths } from 'date-fns';
@@ -92,6 +92,10 @@ export function Transactions() {
 
   const customCategories = settings.customCategories ?? [];
   const allCategories    = useMemo(() => getAllCategories(customCategories), [customCategories]);
+
+  // Defer the full transaction list so the page shell and toolbar can paint
+  // before the list's O(n) filter + group passes block the main thread.
+  const deferredTransactions = useDeferredValue(transactions);
 
   const [sheetOpen,           setSheetOpen]           = useState(false);
   const [editingTx,           setEditingTx]           = useState<Transaction | null>(null);
@@ -195,9 +199,9 @@ export function Transactions() {
 
   // Which categories actually appear in the transaction list (for pill row)
   const usedCategories = useMemo(() => {
-    const names = new Set(transactions.map((t) => t.category).filter(Boolean));
+    const names = new Set(deferredTransactions.map((t) => t.category).filter(Boolean));
     return allCategories.filter((c) => names.has(c.name));
-  }, [transactions, allCategories]);
+  }, [deferredTransactions, allCategories]);
 
   const hasDateSourceFilters = filters.dateFrom || filters.dateTo || filters.source;
 
@@ -528,7 +532,7 @@ export function Transactions() {
         style={{ borderRadius: 12 }}
       >
         <TransactionList
-          transactions={transactions}
+          transactions={deferredTransactions}
           filters={filters}
           currency={currency}
           groupBy={groupBy}

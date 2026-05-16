@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useTransition, useDeferredValue } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useFinanceStore } from '../store/financeStore';
@@ -41,12 +41,17 @@ export function Dashboard() {
   const bankConnection = useFinanceStore((s) => s.bankConnection);
   const syncing = useFinanceStore((s) => s.syncing);
   const syncBankTransactions = useFinanceStore((s) => s.syncBankTransactions);
+  const [, startTransition] = useTransition();
+
+  // Defer heavy derived computations so the page can paint its skeleton/layout
+  // before blocking the main thread with O(n) passes over hundreds of transactions.
+  const deferredTransactions = useDeferredValue(transactions);
 
   const currentMonthTx = useMemo(() => {
     const now = new Date();
     const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    return transactions.filter((tx) => tx.date.startsWith(prefix));
-  }, [transactions]);
+    return deferredTransactions.filter((tx) => tx.date.startsWith(prefix));
+  }, [deferredTransactions]);
 
   const stats = useMemo(() => getDashboardStats(currentMonthTx), [currentMonthTx]);
   const categoryTotals = useMemo(() => getCategoryTotals(currentMonthTx), [currentMonthTx]);
@@ -70,7 +75,7 @@ export function Dashboard() {
   );
 
   const budgetCategories = useMemo(() => Object.entries(budgets), [budgets]);
-  const recentTx = useMemo(() => transactions.slice(0, 8), [transactions]);
+  const recentTx = useMemo(() => deferredTransactions.slice(0, 8), [deferredTransactions]);
   const currency = settings.currency || 'AUD';
 
   const now = new Date();
@@ -103,7 +108,7 @@ export function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           {bankConnection?.status === 'connected' && (
-            <Button size="sm" variant="outline" onClick={syncBankTransactions} loading={syncing}>
+            <Button size="sm" variant="outline" onClick={() => startTransition(() => { void syncBankTransactions(); })} loading={syncing}>
               <RefreshCw className="h-3.5 w-3.5" />
               Sync
             </Button>

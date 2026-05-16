@@ -58,7 +58,7 @@ const rowVariants = {
   },
 };
 
-export function TransactionItem({
+export const TransactionItem = React.memo(function TransactionItem({
   transaction,
   onEdit,
   onDelete,
@@ -99,7 +99,6 @@ export function TransactionItem({
       onHoverEnd={() => setHovered(false)}
       className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-default transition-colors hover:bg-surface-raised"
       style={{
-        willChange: 'transform, opacity',
         background: selected ? 'var(--accent-soft)' : undefined,
       }}
     >
@@ -124,7 +123,6 @@ export function TransactionItem({
             : getMerchantBg(transaction.merchant_name || transaction.description),
           color: isIncome ? 'rgb(var(--income))' : getMerchantFg(transaction.merchant_name || transaction.description),
           border: '1px solid rgba(255,255,255,0.06)',
-          willChange: 'transform',
         }}
         animate={{ scale: hovered ? 1.06 : 1 }}
         transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
@@ -259,4 +257,4 @@ export function TransactionItem({
       )}
     </motion.div>
   );
-}
+});

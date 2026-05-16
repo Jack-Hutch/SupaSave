@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useDeferredValue } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useFinanceStore } from '../store/financeStore';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
@@ -37,11 +37,15 @@ export function Analytics() {
     [settings.customCategories],
   );
 
-  const categoryTotals = useMemo(() => getCategoryTotals(transactions), [transactions]);
-  const monthlyData    = useMemo(() => getMonthlyComparisons(transactions), [transactions]);
-  const merchantStats  = useMemo(() => getMerchantStats(transactions).slice(0, 10), [transactions]);
-  const stats          = useMemo(() => getDashboardStats(transactions), [transactions]);
-  const weeklyChart    = useMemo(() => getChartSeries(transactions, 'week'), [transactions]);
+  // Defer heavy derived computations so the page can paint before blocking
+  // the main thread with multiple O(n) passes over hundreds of transactions.
+  const deferredTransactions = useDeferredValue(transactions);
+
+  const categoryTotals = useMemo(() => getCategoryTotals(deferredTransactions), [deferredTransactions]);
+  const monthlyData    = useMemo(() => getMonthlyComparisons(deferredTransactions), [deferredTransactions]);
+  const merchantStats  = useMemo(() => getMerchantStats(deferredTransactions).slice(0, 10), [deferredTransactions]);
+  const stats          = useMemo(() => getDashboardStats(deferredTransactions), [deferredTransactions]);
+  const weeklyChart    = useMemo(() => getChartSeries(deferredTransactions, 'week'), [deferredTransactions]);
 
   const donutData = useMemo(
     () =>

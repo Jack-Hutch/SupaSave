@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Link2, Link2Off, CheckCircle, RefreshCw,
@@ -39,6 +39,7 @@ export function ConnectBank() {
   const settings             = useFinanceStore((s) => s.settings);
   const { success, error: toastError } = useToast();
 
+  const [, startTransition] = useTransition();
   const [configuring, setConfiguring]   = useState<ConfigureTarget>(null);
   const [upToken, setUpToken]           = useState('');
   const [showToken, setShowToken]       = useState(false);
@@ -121,7 +122,7 @@ export function ConnectBank() {
               </p>
             )}
           </div>
-          <Button size="sm" variant="outline" onClick={syncBankTransactions} loading={syncing}>
+          <Button size="sm" variant="outline" onClick={() => startTransition(() => { void syncBankTransactions(); })} loading={syncing}>
             <RefreshCw className="h-3.5 w-3.5" />
             Sync
           </Button>

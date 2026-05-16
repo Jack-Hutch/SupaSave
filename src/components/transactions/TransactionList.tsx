@@ -362,10 +362,13 @@ export function TransactionList({
   }, [groupBy]);
 
   const filtered = useMemo(() => applyFilters(transactions, filters), [transactions, filters]);
-  const sliced   = maxItems ? filtered.slice(0, maxItems) : filtered;
 
-  const paginated = maxItems || groupBy !== 'date' ? sliced : sliced.slice(0, page * PAGE_SIZE);
-  const hasMore   = !maxItems && groupBy === 'date' && filtered.length > page * PAGE_SIZE;
+  const paginated = useMemo(() => {
+    const sliced = maxItems ? filtered.slice(0, maxItems) : filtered;
+    return maxItems || groupBy !== 'date' ? sliced : sliced.slice(0, page * PAGE_SIZE);
+  }, [filtered, maxItems, groupBy, page]);
+
+  const hasMore = !maxItems && groupBy === 'date' && filtered.length > page * PAGE_SIZE;
 
   const groups = useMemo(() => {
     if (groupBy === 'category') return groupByCategory(paginated);

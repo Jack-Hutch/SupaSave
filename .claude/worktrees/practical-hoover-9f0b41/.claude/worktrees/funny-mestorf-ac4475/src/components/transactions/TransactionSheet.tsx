@@ -1,0 +1,329 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { Modal } from '../ui/Modal';
+import { Input, Textarea } from '../ui/Input';
+import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
+import { CategoryPickerPopover } from './CategoryPickerPopover';
+import { useFinanceStore } from '../../store/financeStore';
+import { getAllCategories, COLOR_CLASSES } from '../../lib/categories';
+import type { Transaction, TransactionSource } from '../../types';
+import { format } from 'date-fns';
+
+// ─── Payment methods ───────────────────────────────────────────────────────────
+
+const PAYMENT_METHODS = [
+  '', 'Card', 'Cash', 'Bank Transfer', 'Direct Debit', 'BPAY', 'PayID', 'PayPal', 'Other',
+];
+
+// ─── Structured tag helpers ───────────────────────────────────────────────────
+// Subcategory  → stored as "sub:Fast Food" in the tags array
+// Payment      → stored as "pay:Card"   in the tags array
+// Regular tags → everything else
+
+const SUB_PREFIX = 'sub:';
+const PAY_PREFIX = 'pay:';
+
+function parseTags(tags: string[] = []) {
+  const subcategory   = tags.find((t) => t.startsWith(SUB_PREFIX))?.slice(SUB_PREFIX.length) ?? '';
+  const paymentMethod = tags.find((t) => t.startsWith(PAY_PREFIX))?.slice(PAY_PREFIX.length) ?? '';
+  const regularTags   = tags.filter((t) => !t.startsWith(SUB_PREFIX) && !t.startsWith(PAY_PREFIX));
+  return { subcategory, paymentMethod, regularTags };
+}
+
+function buildTags(regularTags: string[], subcategory: string, paymentMethod: string): string[] {
+  const out = [...regularTags];
+  if (subcategory)   out.push(`${SUB_PREFIX}${subcategory}`);
+  if (paymentMethod) out.push(`${PAY_PREFIX}${paymentMethod}`);
+  return out;
+}
+
+// ─── Props / form types ───────────────────────────────────────────────────────
+
+interface TransactionSheetProps {
+  isOpen:       boolean;
+  onClose:      () => void;
+  onSave:       (data: Omit<Transaction, 'id' | 'updated_at'>) => Promise<void>;
+  transaction?: Transaction | null;
+  userId:       string;
+}
+
+interface FormData {
+  description:   string;
+  amount:        string;
+  date:          string;
+  category:      string;
+  subcategory:   string;
+  paymentMethod: string;
+  is_income:     boolean;
+  notes:         string;
+  merchant_name: string;
+  tags:          string; // comma-separated regular tags
+}
+
+function makeDefault(): FormData {
+  return {
+    description:   '',
+    amount:        '',
+    date:          format(new Date(), 'yyyy-MM-dd'),
+    category:      'Uncategorized',
+    subcategory:   '',
+    paymentMethod: '',
+    is_income:     false,
+    notes:         '',
+    merchant_name: '',
+    tags:          '',
+  };
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function TransactionSheet({
+  isOpen,
+  onClose,
+  onSave,
+  transaction,
+  userId,
+}: TransactionSheetProps) {
+  const customCategories = useFinanceStore((s) => s.settings.customCategories);
+
+  // Merged list — built-in first, then custom
+  const allCategories = useMemo(
+    () => getAllCategories(customCategories),
+    [customCategories],
+  );
+
+  const [form, setForm]     = useState<FormData>(makeDefault);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+
+  const set = (patch: Partial<FormData>) => setForm((f) => ({ ...f, ...patch }));
+
+  // Seed form when the sheet opens or the transaction changes
+  useEffect(() => {
+    if (transaction) {
+      const { subcategory, paymentMethod, regularTags } = parseTags(transaction.tags);
+      setForm({
+        description:   transaction.description,
+        amount:        String(transaction.amount),
+        date:          transaction.date,
+        category:      transaction.category,
+        subcategory,
+        paymentMethod,
+        is_income:     transaction.is_income,
+        notes:         transaction.notes || '',
+        merchant_name: transaction.merchant_name || '',
+        tags:          regularTags.join(', '),
+      });
+    } else {
+      setForm(makeDefault());
+    }
+    setErrors({});
+  }, [transaction, isOpen]);
+
+  const validate = (): boolean => {
+    const e: Partial<Record<keyof FormData, string>> = {};
+    if (!form.description.trim()) e.description = 'Description is required';
+    if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0)
+      e.amount = 'Enter a valid amount';
+    if (!form.date) e.date = 'Date is required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const regularTags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
+      const allTags     = buildTags(regularTags, form.subcategory, form.paymentMethod);
+      await onSave({
+        user_id:       userId,
+        description:   form.description.trim(),
+        amount:        parseFloat(form.amount),
+        date:          form.date,
+        category:      form.category,
+        is_income:     form.is_income,
+        direction:     form.is_income ? 'CREDIT' : 'DEBIT',
+        notes:         form.notes.trim() || undefined,
+        merchant_name: form.merchant_name.trim() || undefined,
+        tags:          allTags.length > 0 ? allTags : undefined,
+        source:        (transaction?.source || 'manual') as TransactionSource,
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Current category definition (for badge preview + subcategory list)
+  const catDef          = allCategories.find((c) => c.name === form.category);
+  const badgeClass      = catDef ? COLOR_CLASSES[catDef.color].badge : '';
+  const subcatOptions   = catDef?.subcategories ?? [];
+
+  // Combobox trigger refs/state
+  const catTriggerRef   = useRef<HTMLButtonElement>(null);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={transaction ? 'Edit Transaction' : 'Add Transaction'}
+      size="md"
+    >
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+
+        {/* ── Income / Expense toggle ── */}
+        <div className="flex rounded-lg overflow-hidden border border-border-base">
+          <button
+            type="button"
+            onClick={() => set({
+              is_income: false,
+              category: form.category === 'Income' ? 'Uncategorized' : form.category,
+              subcategory: '',
+            })}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              !form.is_income
+                ? 'bg-expense/15 text-expense'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            Expense
+          </button>
+          <button
+            type="button"
+            onClick={() => set({ is_income: true, category: 'Income', subcategory: '' })}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              form.is_income
+                ? 'bg-income/15 text-income'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            Income
+          </button>
+        </div>
+
+        {/* ── Description ── */}
+        <Input
+          label="Description"
+          placeholder="e.g. Coffee at Campos"
+          value={form.description}
+          onChange={(e) => set({ description: e.target.value })}
+          error={errors.description}
+          autoFocus
+        />
+
+        {/* ── Amount + Date ── */}
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="0.00"
+            value={form.amount}
+            onChange={(e) => set({ amount: e.target.value })}
+            error={errors.amount}
+            leftIcon={<span className="text-sm font-medium">$</span>}
+          />
+          <Input
+            label="Date"
+            type="date"
+            value={form.date}
+            onChange={(e) => set({ date: e.target.value })}
+            error={errors.date}
+          />
+        </div>
+
+        {/* ── Category ── */}
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground-muted">Category</label>
+          <button
+            ref={catTriggerRef}
+            type="button"
+            disabled={form.is_income}
+            onClick={() => setCatPickerOpen((v) => !v)}
+            className={`flex w-full items-center gap-2 rounded-lg border border-border-base bg-surface px-3 py-2 text-left text-sm transition-colors hover:bg-surface-hover disabled:opacity-60 disabled:cursor-not-allowed ${
+              badgeClass && form.category !== 'Uncategorized' ? '' : 'text-foreground-subtle'
+            }`}
+          >
+            {catDef?.icon && <span className="shrink-0">{catDef.icon}</span>}
+            <span className="flex-1 truncate text-foreground">{form.category}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-foreground-muted" />
+          </button>
+          <CategoryPickerPopover
+            anchorRef={catTriggerRef}
+            isOpen={catPickerOpen}
+            onClose={() => setCatPickerOpen(false)}
+            currentCategory={form.category}
+            customCategories={customCategories}
+            onSelect={(name) => set({ category: name, subcategory: '' })}
+          />
+        </div>
+
+        {/* ── Subcategory ── */}
+        {subcatOptions.length > 0 ? (
+          <Select
+            label="Subcategory"
+            value={form.subcategory}
+            onChange={(e) => set({ subcategory: e.target.value })}
+            options={[
+              { value: '', label: 'None' },
+              ...subcatOptions.map((s) => ({ value: s, label: s })),
+            ]}
+          />
+        ) : (
+          <Input
+            label="Subcategory (optional)"
+            placeholder="e.g. Coffee, EFTPOS…"
+            value={form.subcategory}
+            onChange={(e) => set({ subcategory: e.target.value })}
+          />
+        )}
+
+        {/* ── Payment method ── */}
+        <Select
+          label="Payment method"
+          value={form.paymentMethod}
+          onChange={(e) => set({ paymentMethod: e.target.value })}
+          options={PAYMENT_METHODS.map((m) => ({ value: m, label: m || 'Not specified' }))}
+        />
+
+        {/* ── Merchant ── */}
+        <Input
+          label="Merchant (optional)"
+          placeholder="e.g. Woolworths"
+          value={form.merchant_name}
+          onChange={(e) => set({ merchant_name: e.target.value })}
+        />
+
+        {/* ── Notes ── */}
+        <Textarea
+          label="Notes (optional)"
+          placeholder="Any notes…"
+          value={form.notes}
+          onChange={(e) => set({ notes: e.target.value })}
+          rows={2}
+        />
+
+        {/* ── Tags ── */}
+        <Input
+          label="Tags (comma-separated)"
+          placeholder="e.g. work, reimbursable"
+          value={form.tags}
+          onChange={(e) => set({ tags: e.target.value })}
+        />
+
+        {/* ── Actions ── */}
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={saving}>
+            {transaction ? 'Save changes' : 'Add transaction'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
