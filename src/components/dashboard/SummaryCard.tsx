@@ -82,7 +82,6 @@ export function SummaryCard({
   return (
     <motion.div
       layoutId={layoutId}
-      layout={!!layoutId}
       transition={layoutId ? sharedTransition : undefined}
       style={{ borderRadius: 14, position: 'relative', overflow: 'hidden' }}
       className="border border-border-base bg-surface px-5 pt-[18px] pb-0 hover:border-border-strong hover:bg-surface-raised transition-colors"

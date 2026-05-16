@@ -167,7 +167,6 @@ export function Dashboard() {
         <motion.div
           variants={item}
           layoutId={SHARED_ID.cardDonut}
-          layout
           transition={sharedTransition}
           style={{ borderRadius: 12 }}
           className="lg:col-span-2"
@@ -188,7 +187,6 @@ export function Dashboard() {
         <motion.div
           variants={item}
           layoutId={SHARED_ID.cardTransactions}
-          layout
           transition={sharedTransition}
           style={{ borderRadius: 12 }}
           className="lg:col-span-3"
