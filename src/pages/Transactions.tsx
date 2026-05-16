@@ -524,7 +524,6 @@ export function Transactions() {
       {/* ── Transaction list ─────────────────────────────────────────── */}
       <motion.div
         layoutId={SHARED_ID.cardTransactions}
-        layout
         transition={sharedTransition}
         style={{ borderRadius: 12 }}
       >

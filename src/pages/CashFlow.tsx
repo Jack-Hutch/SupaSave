@@ -173,7 +173,6 @@ export function CashFlow() {
       */}
       <motion.div
         layoutId={SHARED_ID.cardAreaTrend}
-        layout
         transition={sharedTransition}
         style={{ borderRadius: 12 }}
       >
@@ -199,7 +198,6 @@ export function CashFlow() {
       */}
       <motion.div
         layoutId={SHARED_ID.cardBarMonthly}
-        layout
         transition={sharedTransition}
         style={{ borderRadius: 12 }}
       >

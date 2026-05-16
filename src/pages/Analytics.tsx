@@ -30,8 +30,12 @@ export function Analytics() {
 
   const [tab, setTab] = useState<Tab>('overview');
 
-  const currency         = settings.currency || 'AUD';
-  const customCategories = settings.customCategories ?? [];
+  const currency = settings.currency || 'AUD';
+
+  const customCategories = useMemo(
+    () => settings.customCategories ?? [],
+    [settings.customCategories],
+  );
 
   const categoryTotals = useMemo(() => getCategoryTotals(transactions), [transactions]);
   const monthlyData    = useMemo(() => getMonthlyComparisons(transactions), [transactions]);
@@ -39,12 +43,23 @@ export function Analytics() {
   const stats          = useMemo(() => getDashboardStats(transactions), [transactions]);
   const weeklyChart    = useMemo(() => getChartSeries(transactions, 'week'), [transactions]);
 
-  const donutData = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name, value]) => ({ name, value }));
+  const donutData = useMemo(
+    () =>
+      Object.entries(categoryTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([name, value]) => ({ name, value })),
+    [categoryTotals],
+  );
 
-  const donutColors = donutData.map(({ name }) => getCategoryHex(name, customCategories));
+  const donutColors = useMemo(
+    () => donutData.map(({ name }) => getCategoryHex(name, customCategories)),
+    [donutData, customCategories],
+  );
+
+  // Pre-compute breakdown totals once — avoids O(n²) inside .map()
+  const breakdownMax   = useMemo(() => Math.max(...Object.values(categoryTotals), 0), [categoryTotals]);
+  const breakdownTotal = useMemo(() => Object.values(categoryTotals).reduce((s, v) => s + v, 0), [categoryTotals]);
 
   return (
     <div className="max-w-5xl mx-auto px-8 py-9 space-y-5">
@@ -115,7 +130,6 @@ export function Analytics() {
                 */}
                 <motion.div
                   layoutId={SHARED_ID.cardDonut}
-                  layout
                   transition={sharedTransition}
                   style={{ borderRadius: 12 }}
                 >
@@ -169,7 +183,6 @@ export function Analytics() {
               */}
               <motion.div
                 layoutId={SHARED_ID.cardAreaTrend}
-                layout
                 transition={sharedTransition}
                 style={{ borderRadius: 12 }}
               >
@@ -231,7 +244,6 @@ export function Analytics() {
               */}
               <motion.div
                 layoutId={SHARED_ID.cardBarMonthly}
-                layout
                 transition={sharedTransition}
                 style={{ borderRadius: 12 }}
               >
@@ -260,14 +272,12 @@ export function Analytics() {
                     {Object.entries(categoryTotals)
                       .sort((a, b) => b[1] - a[1])
                       .map(([cat, amount]) => {
-                        const max        = Math.max(...Object.values(categoryTotals));
-                        const pct        = (amount / max) * 100;
+                        const pct        = breakdownMax > 0 ? (amount / breakdownMax) * 100 : 0;
                         const catDef     = getCategoryDef(cat, customCategories);
                         const swatchCls  = catDef
                           ? COLOR_CLASSES[catDef.color].swatch
                           : 'bg-accent';
-                        const total      = Object.values(categoryTotals).reduce((s, v) => s + v, 0);
-                        const share      = total > 0 ? Math.round((amount / total) * 100) : 0;
+                        const share      = breakdownTotal > 0 ? Math.round((amount / breakdownTotal) * 100) : 0;
                         return (
                           <div key={cat}>
                             <div className="flex items-center justify-between mb-1.5">
