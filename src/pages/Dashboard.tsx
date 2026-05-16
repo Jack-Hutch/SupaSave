@@ -51,17 +51,26 @@ export function Dashboard() {
   const stats = useMemo(() => getDashboardStats(currentMonthTx), [currentMonthTx]);
   const categoryTotals = useMemo(() => getCategoryTotals(currentMonthTx), [currentMonthTx]);
 
-  const customCategories = settings.customCategories ?? [];
+  const customCategories = useMemo(
+    () => settings.customCategories ?? [],
+    [settings.customCategories]
+  );
 
-  const donutData = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name, value]) => ({ name, value }));
+  const donutData = useMemo(
+    () => Object.entries(categoryTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, value]) => ({ name, value })),
+    [categoryTotals]
+  );
 
-  const donutColors = donutData.map(({ name }) => getCategoryHex(name, customCategories));
+  const donutColors = useMemo(
+    () => donutData.map(({ name }) => getCategoryHex(name, customCategories)),
+    [donutData, customCategories]
+  );
 
-  const budgetCategories = Object.entries(budgets);
-  const recentTx = transactions.slice(0, 8);
+  const budgetCategories = useMemo(() => Object.entries(budgets), [budgets]);
+  const recentTx = useMemo(() => transactions.slice(0, 8), [transactions]);
   const currency = settings.currency || 'AUD';
 
   const now = new Date();

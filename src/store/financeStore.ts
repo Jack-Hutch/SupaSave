@@ -396,7 +396,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   },
 
   addTransaction: async (txData) => {
-    const { userId, transactions } = get();
+    const { userId, transactions, merchants } = get();
     if (!userId) throw new Error('Not authenticated');
 
     const newTx: Transaction = {
@@ -425,15 +425,15 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
           ),
         }));
       } catch (err) {
-        // Rollback
-        set({ transactions });
+        // Rollback both transactions and merchants
+        set({ transactions, merchants });
         throw err;
       }
     }
   },
 
   updateTransaction: async (id, updates, { silent = false } = {}) => {
-    const { userId, transactions } = get();
+    const { userId, transactions, merchants } = get();
     if (!userId) throw new Error('Not authenticated');
 
     const prev = transactions.find((tx) => tx.id === id);
@@ -451,7 +451,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       } catch (err) {
         if (!silent) {
           // Rollback optimistic update and re-throw so the caller can toast
-          set({ transactions });
+          set({ transactions, merchants });
           throw err;
         }
         // silent=true: keep the optimistic update even if Supabase failed
@@ -461,7 +461,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
   },
 
   deleteTransaction: async (id) => {
-    const { userId, transactions } = get();
+    const { userId, transactions, merchants } = get();
     if (!userId) throw new Error('Not authenticated');
 
     const updated = transactions.filter((tx) => tx.id !== id);
@@ -471,7 +471,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       try {
         await financeService.deleteTransaction(id, userId);
       } catch (err) {
-        set({ transactions });
+        set({ transactions, merchants });
         throw err;
       }
     }

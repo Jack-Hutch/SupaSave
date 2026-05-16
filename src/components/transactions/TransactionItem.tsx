@@ -95,7 +95,6 @@ export function TransactionItem({
   return (
     <motion.div
       variants={rowVariants}
-      layout
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
       className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-default transition-colors hover:bg-surface-raised"
