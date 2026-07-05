@@ -1,4 +1,4 @@
-import { format, addWeeks, addMonths, addYears } from 'date-fns';
+import { format, addWeeks, addMonths, addYears, subWeeks, subMonths, subYears } from 'date-fns';
 import type { BillingCycle, Membership, Transaction } from '../types';
 
 // ─── Subscription-transaction link tags ──────────────────────────────────────
@@ -29,16 +29,48 @@ export function isLinkedTo(tags: string[] | null | undefined, membershipId: stri
   return !!(tags?.includes(`${SUB_LINK_PREFIX}${membershipId}`));
 }
 
+// Common payment-processor / bank prefixes that pollute merchant descriptions
+// and stop a clean name match (e.g. "SQ *NETFLIX", "DIRECT DEBIT SPOTIFY").
+const MERCHANT_NOISE = [
+  'direct debit', 'card purchase', 'visa purchase', 'eftpos', 'purchase',
+  'recurring', 'payment to', 'payment', 'pos ', 'sp ', 'sq *', 'sq*',
+  'paypal *', 'paypal*', 'pp *', 'sumup *', 'tfr ', 'osko', 'bpay',
+];
+
+/**
+ * Normalise a merchant string for matching: lowercase, strip known
+ * processor noise, drop non-alphanumerics and trailing reference codes,
+ * and collapse whitespace. "SQ *Netflix.com 1234" → "netflix".
+ */
+export function normalizeMerchant(raw: string): string {
+  let s = (raw || '').toLowerCase().trim();
+  for (const noise of MERCHANT_NOISE) {
+    s = s.split(noise).join(' ');
+  }
+  s = s
+    .replace(/[^a-z0-9 ]+/g, ' ')   // strip punctuation/symbols
+    .replace(/\b\d{3,}\b/g, ' ')    // strip long reference numbers
+    .replace(/\b(com|au|inc|ltd|pty|co|www)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return s;
+}
+
 /**
  * Find transactions that look like renewals for a given membership but have not
- * yet been linked to it. Matches on merchant name (case-insensitive substring)
- * and amount within 10% tolerance.
+ * yet been linked to it. Matches on a normalised merchant name (substring OR a
+ * shared significant word) and amount within 15% tolerance.
+ *
+ * Matching was widened from a raw substring check because real bank descriptions
+ * carry processor prefixes and reference codes that defeated the old comparison —
+ * which is exactly why charges weren't linking and subscriptions stayed "overdue".
  */
 export function findRenewalCandidates(
   transactions: Transaction[],
   membership: Membership,
 ): Transaction[] {
-  const mName = membership.name.toLowerCase().trim();
+  const mName  = normalizeMerchant(membership.name);
+  const mTokens = new Set(mName.split(' ').filter((t) => t.length >= 4));
   const cost   = membership.cost;
 
   return transactions.filter((tx) => {
@@ -46,14 +78,17 @@ export function findRenewalCandidates(
     if (isLinkedTo(tx.tags, membership.id)) return false;   // already linked
     if (tx.date < membership.start_date) return false;      // before subscription started
 
-    // Merchant name must overlap
-    const txName = (tx.merchant_name || tx.description).toLowerCase().trim();
-    const nameMatch = txName.includes(mName) || mName.includes(txName);
-    if (!nameMatch) return false;
+    // Merchant name must overlap after normalisation
+    const txName = normalizeMerchant(tx.merchant_name || tx.description);
+    if (!txName || !mName) return false;
+    const substringMatch = txName.includes(mName) || mName.includes(txName);
+    const tokenMatch = mTokens.size > 0 &&
+      txName.split(' ').some((t) => t.length >= 4 && mTokens.has(t));
+    if (!substringMatch && !tokenMatch) return false;
 
-    // Amount must be within 10%
+    // Amount must be within 15% (prices drift with tax / FX / plan tweaks)
     const diff = Math.abs(Math.abs(tx.amount) - cost) / Math.max(cost, 0.01);
-    return diff <= 0.10;
+    return diff <= 0.15;
   });
 }
 
@@ -165,7 +200,7 @@ export function totalYearlyEquivalent(memberships: Membership[]): number {
 
 /**
  * Advance a date string by one billing cycle.
- * Used when confirming a subscription renewal to update next_billing_date.
+ * Used as the building block for moving a subscription's next_billing_date.
  */
 export function advanceByOneCycle(date: string, cycle: BillingCycle): string {
   try {
@@ -176,4 +211,52 @@ export function advanceByOneCycle(date: string, cycle: BillingCycle): string {
       default:        return format(addMonths(d, 1), 'yyyy-MM-dd');
     }
   } catch { return date; }
+}
+
+/**
+ * The date one billing cycle before the given next billing date. A payment
+ * dated on or after this covers the CURRENT cycle; anything earlier is a
+ * historical backfill and must not move the due date.
+ */
+export function cycleStartOf(nextDate: string, cycle: BillingCycle): string {
+  try {
+    const d = new Date(nextDate);
+    switch (cycle) {
+      case 'weekly': return format(subWeeks(d, 1),  'yyyy-MM-dd');
+      case 'yearly': return format(subYears(d, 1),  'yyyy-MM-dd');
+      default:       return format(subMonths(d, 1), 'yyyy-MM-dd');
+    }
+  } catch { return nextDate; }
+}
+
+/**
+ * Roll a subscription's next_billing_date forward to the next *future* date
+ * after a payment has been made.
+ *
+ * Why this exists: previously a payment advanced the date by exactly one cycle.
+ * If a subscription was several cycles overdue (e.g. the bank never matched the
+ * charge for two months), advancing once still left it in the past, so it kept
+ * showing "Xd overdue" even though the user had just paid it. This advances by
+ * whole cycles until the date lands strictly after the payment date — at least
+ * one cycle, never overdue afterwards.
+ *
+ * @param currentNextDate the subscription's current next_billing_date
+ * @param cycle           billing cycle
+ * @param paidDate        the date the payment was made (defaults to today)
+ */
+export function advanceBillingDate(
+  currentNextDate: string,
+  cycle: BillingCycle,
+  paidDate: string = new Date().toISOString().split('T')[0],
+): string {
+  // Always advance at least one cycle (you paid for this period; next is next).
+  let next = advanceByOneCycle(currentNextDate, cycle);
+  // Then keep advancing until the date is genuinely in the future relative to
+  // the payment, so a long-overdue subscription doesn't stay overdue.
+  let guard = 0;
+  while (next <= paidDate && guard < 600) {
+    next = advanceByOneCycle(next, cycle);
+    guard += 1;
+  }
+  return next;
 }

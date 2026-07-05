@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Plus, Sparkles, Bell, X, Pencil, ChevronDown, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Plus, Sparkles, Bell, X, Pencil, ChevronDown, CheckCircle2, Check, Link2, Search } from 'lucide-react';
 import { format, addMonths, differenceInDays } from 'date-fns';
 import { useFinanceStore } from '../store/financeStore';
 import { useAuth } from '../hooks/useAuth';
@@ -9,16 +9,19 @@ import { SubscriptionSheet } from '../components/subscriptions/SubscriptionSheet
 import { SubscriptionAnalytics } from '../components/subscriptions/SubscriptionAnalytics';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
+import { Input } from '../components/ui/Input';
 import { formatCurrency, formatRelativeDate } from '../lib/utils';
 import {
   toMonthlyEquivalent,
   getBillingCycleLabel,
   findRenewalCandidates,
-  advanceByOneCycle,
+  advanceBillingDate,
+  cycleStartOf,
 } from '../utils/subscriptionUtils';
 import { detectSubscriptionCandidates } from '../utils/analyticsUtils';
 import { TAB_SPRING } from '../lib/motion';
-import { addSubLink, isLinkedTo } from '../utils/subscriptionUtils';
+import { addSubLink, isLinkedTo, isLinkedToSubscription } from '../utils/subscriptionUtils';
 import type { Membership, BillingCycle, Transaction } from '../types';
 import type { SubscriptionPrefill } from '../components/subscriptions/SubscriptionSheet';
 
@@ -37,6 +40,7 @@ function urgencyBadge(days: number) {
   if (days <= 7)  return { label: `${days} days`,                cls: 'text-amber-400 bg-amber-500/10 border-amber-500/25' };
   return { label: `${days} days`, cls: 'text-foreground-muted bg-surface-raised border-border-base' };
 }
+
 
 function guessCycle(txGroup: Transaction[]): BillingCycle {
   if (txGroup.length < 2) return 'monthly';
@@ -73,13 +77,15 @@ interface SubRowProps {
   onEdit:          (m: Membership) => void;
   onDelete:        (id: string) => void;
   onConfirmRenewal:(tx: Transaction, m: Membership) => void;
+  onLogPayment:    (m: Membership) => Promise<void>;
+  onLinkTx:        (m: Membership) => void;
+  logging:         boolean;
 }
 
-function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfirmRenewal }: SubRowProps) {
+function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfirmRenewal, onLogPayment, onLinkTx, logging }: SubRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const days    = daysUntil(m.next_billing_date);
-  const badge   = urgencyBadge(days);
   const monthly = toMonthlyEquivalent(m.cost, m.billing_cycle);
 
   // Most-recent linked transaction
@@ -87,33 +93,41 @@ function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfir
     ? [...linkedTxs].sort((a, b) => b.date.localeCompare(a.date))[0]
     : null;
 
-  const hasHistory  = linkedTxs.length > 0;
+  // A linked payment inside the current cycle turns the countdown badge
+  // green — "this one's paid, next charge in Xd" at a glance.
+  const paidThisCycle =
+    !!lastPayment &&
+    days >= 0 &&
+    lastPayment.date >= cycleStartOf(m.next_billing_date, m.billing_cycle);
+
+  const badge = paidThisCycle
+    ? { label: days === 0 ? 'Paid · due today' : `Paid · ${days}d`, cls: 'text-income bg-income/10 border-income/25' }
+    : urgencyBadge(days);
+
   const hasRenewals = renewalTxs.length > 0;
-  const showExpand  = hasHistory || hasRenewals;
 
   return (
     <div>
-      {/* Main row */}
+      {/* Main row — enter-only animation. The old AnimatePresence exit could
+          wedge under StrictMode in dev, leaving a stale interactive ghost row
+          whose buttons wrote payments against a dead membership id. */}
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
         transition={{
           opacity: { duration: 0.18, ease: 'easeOut' },
           y:       { duration: 0.22, ease: [0.25, 0.1, 0.25, 1] },
-          height:  { duration: 0.22, ease: [0.4, 0, 0.2, 1] },
-          paddingTop:    { duration: 0.22, ease: [0.4, 0, 0.2, 1] },
-          paddingBottom: { duration: 0.22, ease: [0.4, 0, 0.2, 1] },
         }}
-        className="flex items-center gap-3 px-4 py-3.5 hover:bg-surface-raised transition-colors"
+        className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3.5 hover:bg-surface-raised transition-colors"
       >
         {/* Icon */}
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-xl select-none">
           {m.icon}
         </div>
 
-        {/* Name + meta */}
-        <div className="flex-1 min-w-0">
+        {/* Name + meta — min-width forces the badge/amount/actions cluster to
+            wrap onto its own line on phones instead of crushing the name */}
+        <div className="flex-1 min-w-[140px]">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-semibold text-foreground truncate">{m.name}</p>
             {m.cancel_reminder && (
@@ -137,6 +151,8 @@ function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfir
           </div>
         </div>
 
+        {/* Badge + amount + actions — one cluster so it wraps as a unit */}
+        <div className="ml-auto flex items-center gap-3 shrink-0">
         {/* Countdown badge */}
         <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${badge.cls}`}>
           {badge.label}
@@ -156,17 +172,32 @@ function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfir
 
         {/* Action buttons */}
         <div className="flex items-center gap-1 shrink-0">
-          {showExpand && (
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
-              aria-label={expanded ? 'Collapse payment history' : 'Show payment history'}
-            >
-              <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={TAB_SPRING}>
-                <ChevronDown className="h-3.5 w-3.5" />
-              </motion.div>
-            </button>
-          )}
+          <button
+            onClick={() => onLogPayment(m)}
+            disabled={logging}
+            title="Log payment and advance next billing date"
+            className="rounded-lg p-1.5 text-foreground-subtle hover:text-income hover:bg-surface-hover transition-colors disabled:opacity-50"
+            aria-label={`Log payment for ${m.name}`}
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => onLinkTx(m)}
+            title="Link an existing bank transaction as the payment"
+            className="rounded-lg p-1.5 text-foreground-subtle hover:text-accent hover:bg-surface-hover transition-colors"
+            aria-label={`Link a transaction to ${m.name}`}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
+            aria-label={expanded ? 'Collapse payment history' : 'Show payment history'}
+          >
+            <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={TAB_SPRING}>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </motion.div>
+          </button>
           <button
             onClick={() => onEdit(m)}
             className="rounded-lg p-1.5 text-foreground-subtle hover:text-foreground hover:bg-surface-hover transition-colors"
@@ -182,18 +213,19 @@ function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfir
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
+        </div>
       </motion.div>
 
-      {/* Expandable section — payment history + renewal detection */}
-      <AnimatePresence initial={false}>
-        {expanded && (
+      {/* Expandable section — payment history + renewal detection.
+          Always mounted, driven by `animate` — AnimatePresence-managed
+          mount/unmount could wedge under StrictMode in dev, freezing this
+          section at height 0 so history/renewal confirm were unreachable. */}
           <motion.div
-            key="history"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={false}
+            animate={expanded ? { opacity: 1, height: 'auto' } : { opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
+            aria-hidden={!expanded}
           >
             <div className="mx-4 mb-3 rounded-xl border border-border-base bg-surface-raised overflow-hidden">
 
@@ -261,16 +293,154 @@ function SubRow({ m, currency, linkedTxs, renewalTxs, onEdit, onDelete, onConfir
                 </div>
               ) : (
                 !renewalTxs.length && (
-                  <div className="p-3 text-center">
+                  <div className="p-3 text-center space-y-1.5">
                     <p className="text-xs text-foreground-subtle">No payment history yet</p>
+                    <button
+                      onClick={() => onLinkTx(m)}
+                      className="text-xs font-medium text-accent hover:underline"
+                    >
+                      Link a bank transaction
+                    </button>
                   </div>
                 )
               )}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
     </div>
+  );
+}
+
+// ── Link-payment picker ───────────────────────────────────────────────
+
+interface LinkTransactionModalProps {
+  membership:   Membership | null;
+  transactions: Transaction[];
+  currency:     string;
+  onClose:      () => void;
+  onSelect:     (tx: Transaction) => Promise<void>;
+}
+
+/**
+ * Manually attach an existing transaction to a subscription as a payment.
+ * For when auto renewal-detection misses the real charge (name or amount
+ * too different) and the subscription sits "overdue" even though it was
+ * paid — linking records the payment AND rolls the next billing date
+ * forward past the payment date.
+ */
+function LinkTransactionModal({ membership, transactions, currency, onClose, onSelect }: LinkTransactionModalProps) {
+  const [search, setSearch]   = useState('');
+  const [linking, setLinking] = useState(false);
+
+  // Fresh state each time the picker opens for a subscription
+  useEffect(() => {
+    setSearch('');
+    setLinking(false);
+  }, [membership?.id]);
+
+  const { likely, rest } = useMemo(() => {
+    if (!membership) return { likely: [] as Transaction[], rest: [] as Transaction[] };
+    const q = search.trim().toLowerCase();
+    const unlinked = transactions.filter(
+      (tx) =>
+        !tx.is_income &&
+        !isLinkedToSubscription(tx.tags) &&
+        (!q || (tx.merchant_name || tx.description).toLowerCase().includes(q)),
+    );
+    // Float the auto-detector's candidates to the top; everything else below,
+    // newest first, capped so a huge history doesn't swamp the list.
+    const candidateIds = new Set(findRenewalCandidates(unlinked, membership).map((t) => t.id));
+    const sorted = [...unlinked].sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      likely: sorted.filter((t) => candidateIds.has(t.id)),
+      rest:   sorted.filter((t) => !candidateIds.has(t.id)).slice(0, 50),
+    };
+  }, [membership, transactions, search]);
+
+  const pick = async (tx: Transaction) => {
+    if (linking) return;
+    setLinking(true);
+    try {
+      await onSelect(tx);
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const renderTx = (tx: Transaction, isLikely: boolean) => (
+    <button
+      key={tx.id}
+      onClick={() => pick(tx)}
+      disabled={linking}
+      className="w-full flex items-center gap-3 rounded-lg border border-border-base bg-surface-raised px-3 py-2.5 text-left hover:border-accent/50 hover:bg-surface-hover transition-colors disabled:opacity-50"
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-foreground truncate">
+          {tx.merchant_name || tx.description}
+        </p>
+        <p className="text-[11px] text-foreground-subtle">
+          {format(new Date(tx.date), 'd MMM yyyy')}
+          {tx.source === 'manual' ? ' · manual' : ''}
+        </p>
+      </div>
+      {isLikely && (
+        <span className="text-[10px] font-semibold rounded-full bg-accent/15 text-accent border border-accent/25 px-1.5 py-0.5 shrink-0">
+          likely match
+        </span>
+      )}
+      <p className="font-mono text-xs font-bold text-foreground shrink-0">
+        {formatCurrency(Math.abs(tx.amount), currency)}
+      </p>
+    </button>
+  );
+
+  return (
+    <Modal
+      isOpen={!!membership}
+      onClose={onClose}
+      title={membership ? `Link payment — ${membership.name}` : 'Link payment'}
+      size="md"
+    >
+      <div className="p-5 space-y-4">
+        <p className="text-xs text-foreground-subtle">
+          Pick the transaction that paid for this subscription. It's added to the
+          payment history and the next billing date moves forward — no more
+          "overdue" for a charge you've already made.
+        </p>
+
+        <Input
+          placeholder="Search transactions…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          leftIcon={<Search className="h-4 w-4" />}
+        />
+
+        <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
+          {likely.length > 0 && (
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+              Likely matches
+            </p>
+          )}
+          {likely.map((tx) => renderTx(tx, true))}
+
+          {likely.length > 0 && rest.length > 0 && (
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-foreground-subtle pt-1">
+              Other transactions
+            </p>
+          )}
+          {rest.map((tx) => renderTx(tx, false))}
+
+          {likely.length === 0 && rest.length === 0 && (
+            <div className="py-8 text-center">
+              <p className="text-sm text-foreground-muted">No unlinked transactions found</p>
+              <p className="text-xs text-foreground-subtle mt-1 max-w-xs mx-auto">
+                Sync your bank on the Connect page, or use the ✓ button on the
+                subscription to log the payment manually.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -286,7 +456,11 @@ export function Subscriptions() {
   const updateMembership = useFinanceStore((s) => s.updateMembership);
   const deleteMembership = useFinanceStore((s) => s.deleteMembership);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
+  const addTransaction = useFinanceStore((s) => s.addTransaction);
+  const deleteTransaction = useFinanceStore((s) => s.deleteTransaction);
   const { success, error: toastError } = useToast();
+
+  const [loggingId, setLoggingId] = useState<string | null>(null);
 
   const currency = settings.currency || 'AUD';
 
@@ -296,6 +470,7 @@ export function Subscriptions() {
   const [deleteId, setDeleteId]   = useState<string | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [linkingM, setLinkingM]   = useState<Membership | null>(null);
 
   // ── Per-subscription transaction data ────────────────────────────
   // Build two maps keyed by membership id:
@@ -380,16 +555,70 @@ export function Subscriptions() {
   };
 
   /**
-   * Confirm a renewal: tag the transaction + advance the subscription's
-   * next_billing_date by one cycle.
+   * Log a manual payment: create a new transaction tagged to this
+   * subscription, then advance next_billing_date by one cycle.
+   * Used when the bank hasn't picked up the charge yet.
+   */
+  const handleLogPayment = async (m: Membership) => {
+    if (!user?.id || loggingId) return;
+    setLoggingId(m.id);
+    let loggedTxId: string | null = null;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      loggedTxId = await addTransaction({
+        user_id:       user.id,
+        amount:        m.cost,
+        description:   m.name,
+        merchant_name: m.name,
+        category:      m.category,
+        date:          today,
+        is_income:     false,
+        direction:     'DEBIT',
+        source:        'manual',
+        tags:          addSubLink([], m.id),
+      });
+      // Only advance the due date when the payment covers the current cycle —
+      // if the next charge is already more than a cycle away, advancing again
+      // would push it past the real upcoming charge.
+      if (today >= cycleStartOf(m.next_billing_date, m.billing_cycle)) {
+        const newNextDate = advanceBillingDate(m.next_billing_date, m.billing_cycle, today);
+        await updateMembership(m.id, { next_billing_date: newNextDate });
+        success(`${m.name} payment logged — next ${format(new Date(newNextDate), 'd MMM yyyy')}`);
+      } else {
+        success(`${m.name} payment logged`);
+      }
+    } catch (err) {
+      // If the membership update failed after the payment saved, remove the
+      // orphan payment so tapping the button again doesn't double-log it.
+      if (loggedTxId) {
+        deleteTransaction(loggedTxId).catch(() => undefined);
+      }
+      toastError((err as { message?: string })?.message || 'Failed to log payment');
+    } finally {
+      setLoggingId(null);
+    }
+  };
+
+  /**
+   * Confirm a renewal / link a payment: tag the transaction, and advance the
+   * subscription's next_billing_date ONLY when the payment covers the current
+   * cycle. A historical payment (older than one cycle before the due date) is
+   * a history backfill — linking three old charges must not push the due date
+   * three cycles past the real upcoming charge.
    */
   const handleConfirmRenewal = async (tx: Transaction, m: Membership) => {
     try {
       // silent=true so the 🔁 badge sticks even if Supabase sync fails
       await updateTransaction(tx.id, { tags: addSubLink(tx.tags, m.id) }, { silent: true });
-      const newNextDate = advanceByOneCycle(m.next_billing_date, m.billing_cycle);
-      await updateMembership(m.id, { next_billing_date: newNextDate });
-      success(`${m.name} renewal confirmed — next billing ${format(new Date(newNextDate), 'd MMM yyyy')}`);
+      if (tx.date >= cycleStartOf(m.next_billing_date, m.billing_cycle)) {
+        // advanceBillingDate rolls forward until strictly after the payment,
+        // so an overdue sub paid late still lands on a future date.
+        const newNextDate = advanceBillingDate(m.next_billing_date, m.billing_cycle, tx.date);
+        await updateMembership(m.id, { next_billing_date: newNextDate });
+        success(`${m.name} renewal confirmed — next billing ${format(new Date(newNextDate), 'd MMM yyyy')}`);
+      } else {
+        success(`${m.name} payment added to history`);
+      }
     } catch (err) {
       toastError((err as { message?: string })?.message || 'Failed to confirm renewal');
     }
@@ -435,7 +664,7 @@ export function Subscriptions() {
     <div className="max-w-5xl mx-auto px-8 py-9 space-y-5">
 
       {/* ── Page header ─────────────────────────────────────────────── */}
-      <div className="flex items-end justify-between mb-2">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
         <div>
           <div className="flex items-center gap-3 mb-[6px]">
             <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">Subscriptions</h1>
@@ -512,13 +741,13 @@ export function Subscriptions() {
         customCategories={settings.customCategories}
       />
 
-      {/* ── Bank-detected suggestions ──────────────────────────────── */}
-      <AnimatePresence>
-        {candidates.length > 0 && (
+      {/* ── Bank-detected suggestions — enter-only animations; presence-managed
+          exits wedge under StrictMode in dev, and `layout` on list rows is the
+          known freeze pattern (see CLAUDE.md gotchas). ── */}
+      {candidates.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
             className="rounded-2xl border border-accent/20 bg-accent/5 p-4 space-y-3"
           >
@@ -530,10 +759,8 @@ export function Subscriptions() {
 
             <div className="space-y-2">
               {candidates.map((c) => (
-                <motion.div
+                <div
                   key={c.key}
-                  layout
-                  exit={{ opacity: 0, x: -12 }}
                   className="flex items-center gap-3 rounded-xl border border-border-base bg-surface px-3 py-2.5"
                 >
                   <div className="flex-1 min-w-0">
@@ -554,12 +781,11 @@ export function Subscriptions() {
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+      )}
 
       {/* ── Subscriptions list ─────────────────────────────────────── */}
       <div className="rounded-xl border border-border-base bg-surface overflow-hidden">
@@ -597,20 +823,21 @@ export function Subscriptions() {
         ) : (
           /* List */
           <div className="border-t border-border-base divide-y divide-border-base">
-            <AnimatePresence initial={false}>
-              {stats.sorted.map((m) => (
-                <SubRow
-                  key={m.id}
-                  m={m}
-                  currency={currency}
-                  linkedTxs={linkedTxMap[m.id] ?? []}
-                  renewalTxs={renewalTxMap[m.id] ?? []}
-                  onEdit={openEdit}
-                  onDelete={setDeleteId}
-                  onConfirmRenewal={handleConfirmRenewal}
-                />
-              ))}
-            </AnimatePresence>
+            {stats.sorted.map((m) => (
+              <SubRow
+                key={m.id}
+                m={m}
+                currency={currency}
+                linkedTxs={linkedTxMap[m.id] ?? []}
+                renewalTxs={renewalTxMap[m.id] ?? []}
+                onEdit={openEdit}
+                onDelete={setDeleteId}
+                onConfirmRenewal={handleConfirmRenewal}
+                onLogPayment={handleLogPayment}
+                onLinkTx={setLinkingM}
+                logging={loggingId === m.id}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -623,6 +850,17 @@ export function Subscriptions() {
         membership={editingM}
         prefill={prefill}
         userId={user?.id || ''}
+      />
+
+      <LinkTransactionModal
+        membership={linkingM}
+        transactions={transactions}
+        currency={currency}
+        onClose={() => setLinkingM(null)}
+        onSelect={async (tx) => {
+          if (linkingM) await handleConfirmRenewal(tx, linkingM);
+          setLinkingM(null);
+        }}
       />
 
       <ConfirmDialog

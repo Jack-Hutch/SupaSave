@@ -5,6 +5,7 @@ import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { useFinanceStore } from '../../store/financeStore';
 import { getAllCategories, COLOR_CLASSES } from '../../lib/categories';
+import { SUB_LINK_PREFIX, getSubLinkId, advanceBillingDate, cycleStartOf } from '../../utils/subscriptionUtils';
 import type { Transaction, TransactionSource } from '../../types';
 import { format } from 'date-fns';
 
@@ -15,24 +16,32 @@ const PAYMENT_METHODS = [
 ];
 
 // ─── Structured tag helpers ───────────────────────────────────────────────────
-// Subcategory  → stored as "sub:Fast Food" in the tags array
-// Payment      → stored as "pay:Card"   in the tags array
-// Regular tags → everything else
+// Subcategory        → stored as "sub:Fast Food"        in the tags array
+// Payment            → stored as "pay:Card"             in the tags array
+// Subscription link  → stored as "sub-link:<uuid>"      in the tags array
+// Regular tags       → everything else
+// NOTE: "sub-link:" must be checked before "sub:" fallthrough — it gets its
+// own field and must never leak into the free-text tags input where the raw
+// uuid could be mangled.
 
 const SUB_PREFIX = 'sub:';
 const PAY_PREFIX = 'pay:';
 
 function parseTags(tags: string[] = []) {
-  const subcategory   = tags.find((t) => t.startsWith(SUB_PREFIX))?.slice(SUB_PREFIX.length) ?? '';
+  const subcategory   = tags.find((t) => t.startsWith(SUB_PREFIX) && !t.startsWith(SUB_LINK_PREFIX))?.slice(SUB_PREFIX.length) ?? '';
   const paymentMethod = tags.find((t) => t.startsWith(PAY_PREFIX))?.slice(PAY_PREFIX.length) ?? '';
-  const regularTags   = tags.filter((t) => !t.startsWith(SUB_PREFIX) && !t.startsWith(PAY_PREFIX));
-  return { subcategory, paymentMethod, regularTags };
+  const subscriptionId = getSubLinkId(tags) ?? '';
+  const regularTags   = tags.filter(
+    (t) => !t.startsWith(SUB_PREFIX) && !t.startsWith(PAY_PREFIX) && !t.startsWith(SUB_LINK_PREFIX),
+  );
+  return { subcategory, paymentMethod, subscriptionId, regularTags };
 }
 
-function buildTags(regularTags: string[], subcategory: string, paymentMethod: string): string[] {
+function buildTags(regularTags: string[], subcategory: string, paymentMethod: string, subscriptionId: string): string[] {
   const out = [...regularTags];
-  if (subcategory)   out.push(`${SUB_PREFIX}${subcategory}`);
-  if (paymentMethod) out.push(`${PAY_PREFIX}${paymentMethod}`);
+  if (subcategory)    out.push(`${SUB_PREFIX}${subcategory}`);
+  if (paymentMethod)  out.push(`${PAY_PREFIX}${paymentMethod}`);
+  if (subscriptionId) out.push(`${SUB_LINK_PREFIX}${subscriptionId}`);
   return out;
 }
 
@@ -47,30 +56,32 @@ interface TransactionSheetProps {
 }
 
 interface FormData {
-  description:   string;
-  amount:        string;
-  date:          string;
-  category:      string;
-  subcategory:   string;
-  paymentMethod: string;
-  is_income:     boolean;
-  notes:         string;
-  merchant_name: string;
-  tags:          string; // comma-separated regular tags
+  description:    string;
+  amount:         string;
+  date:           string;
+  category:       string;
+  subcategory:    string;
+  paymentMethod:  string;
+  subscriptionId: string; // '' = not a subscription payment
+  is_income:      boolean;
+  notes:          string;
+  merchant_name:  string;
+  tags:           string; // comma-separated regular tags
 }
 
 function makeDefault(): FormData {
   return {
-    description:   '',
-    amount:        '',
-    date:          format(new Date(), 'yyyy-MM-dd'),
-    category:      'Uncategorized',
-    subcategory:   '',
-    paymentMethod: '',
-    is_income:     false,
-    notes:         '',
-    merchant_name: '',
-    tags:          '',
+    description:    '',
+    amount:         '',
+    date:           format(new Date(), 'yyyy-MM-dd'),
+    category:       'Uncategorized',
+    subcategory:    '',
+    paymentMethod:  '',
+    subscriptionId: '',
+    is_income:      false,
+    notes:          '',
+    merchant_name:  '',
+    tags:           '',
   };
 }
 
@@ -84,6 +95,8 @@ export function TransactionSheet({
   userId,
 }: TransactionSheetProps) {
   const customCategories = useFinanceStore((s) => s.settings.customCategories);
+  const memberships      = useFinanceStore((s) => s.memberships);
+  const updateMembership = useFinanceStore((s) => s.updateMembership);
 
   // Merged list — built-in first, then custom
   const allCategories = useMemo(
@@ -100,7 +113,7 @@ export function TransactionSheet({
   // Seed form when the sheet opens or the transaction changes
   useEffect(() => {
     if (transaction) {
-      const { subcategory, paymentMethod, regularTags } = parseTags(transaction.tags);
+      const { subcategory, paymentMethod, subscriptionId, regularTags } = parseTags(transaction.tags);
       setForm({
         description:   transaction.description,
         amount:        String(transaction.amount),
@@ -108,6 +121,7 @@ export function TransactionSheet({
         category:      transaction.category,
         subcategory,
         paymentMethod,
+        subscriptionId,
         is_income:     transaction.is_income,
         notes:         transaction.notes || '',
         merchant_name: transaction.merchant_name || '',
@@ -135,7 +149,7 @@ export function TransactionSheet({
     setSaving(true);
     try {
       const regularTags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
-      const allTags     = buildTags(regularTags, form.subcategory, form.paymentMethod);
+      const allTags     = buildTags(regularTags, form.subcategory, form.paymentMethod, form.subscriptionId);
       await onSave({
         user_id:       userId,
         description:   form.description.trim(),
@@ -146,9 +160,28 @@ export function TransactionSheet({
         direction:     form.is_income ? 'CREDIT' : 'DEBIT',
         notes:         form.notes.trim() || undefined,
         merchant_name: form.merchant_name.trim() || undefined,
-        tags:          allTags.length > 0 ? allTags : undefined,
+        // Always send the array — `undefined` is dropped from the JSON body
+        // by supabase-js, so clearing the last tag (e.g. unlinking a
+        // subscription payment) would silently never persist and the link
+        // would resurrect on the next reload. `[]` actually clears.
+        tags:          allTags,
         source:        (transaction?.source || 'manual') as TransactionSource,
       });
+
+      // Newly linked to a subscription → treat like a confirmed renewal,
+      // but only advance the due date when this payment covers the CURRENT
+      // cycle. Linking a historical charge is a history backfill and must
+      // not push the due date past the real upcoming charge.
+      const prevSubId = getSubLinkId(transaction?.tags) ?? '';
+      if (form.subscriptionId && form.subscriptionId !== prevSubId) {
+        const m = memberships.find((x) => x.id === form.subscriptionId);
+        if (m && form.date >= cycleStartOf(m.next_billing_date, m.billing_cycle)) {
+          await updateMembership(m.id, {
+            next_billing_date: advanceBillingDate(m.next_billing_date, m.billing_cycle, form.date),
+          }).catch(() => undefined); // link is saved either way; date can be fixed on the Subs page
+        }
+      }
+
       onClose();
     } finally {
       setSaving(false);
@@ -297,6 +330,24 @@ export function TransactionSheet({
           onChange={(e) => set({ paymentMethod: e.target.value })}
           options={PAYMENT_METHODS.map((m) => ({ value: m, label: m || 'Not specified' }))}
         />
+
+        {/* ── Subscription link ── */}
+        {!form.is_income && memberships.length > 0 && (
+          <div className="space-y-1">
+            <Select
+              label="Subscription payment"
+              value={form.subscriptionId}
+              onChange={(e) => set({ subscriptionId: e.target.value })}
+              options={[
+                { value: '', label: 'Not a subscription payment' },
+                ...memberships.map((m) => ({ value: m.id, label: `${m.icon} ${m.name}` })),
+              ]}
+            />
+            <p className="text-[11px] text-foreground-subtle">
+              Linking adds this to the subscription's payment history and moves its next billing date forward.
+            </p>
+          </div>
+        )}
 
         {/* ── Merchant ── */}
         <Input

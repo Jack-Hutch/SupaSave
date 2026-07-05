@@ -5,7 +5,8 @@ import type { Transaction, CategoryDef } from '../../types';
 import { getCategoryBadgeClass, getCategoryDef } from '../../lib/categories';
 import { formatCurrency, formatRelativeDate } from '../../lib/utils';
 import { CategoryPickerPopover } from './CategoryPickerPopover';
-import { isLinkedToSubscription } from '../../utils/subscriptionUtils';
+import { getSubLinkId } from '../../utils/subscriptionUtils';
+import { useFinanceStore } from '../../store/financeStore';
 
 // Deterministic color palettes for merchant avatars based on first letter
 const AVATAR_PALETTES = [
@@ -88,7 +89,12 @@ export const TransactionItem = React.memo(function TransactionItem({
   const catDef         = getCategoryDef(transaction.category, customCategories);
   const badgeCls       = getCategoryBadgeClass(transaction.category, customCategories);
   const catIcon        = catDef?.icon ?? '';
-  const isSubscription = isLinkedToSubscription(transaction.tags);
+
+  // Resolve the linked subscription's name so the chip says WHICH one,
+  // not just a bare 🔁.
+  const memberships  = useFinanceStore((s) => s.memberships);
+  const linkedSubId  = getSubLinkId(transaction.tags);
+  const linkedSub    = linkedSubId ? memberships.find((m) => m.id === linkedSubId) : undefined;
 
   const hasActions = !!(onEdit || onDelete || onAddToSubscription);
 
@@ -173,12 +179,12 @@ export const TransactionItem = React.memo(function TransactionItem({
             {transaction.category}
           </button>
 
-          {isSubscription && (
+          {linkedSubId && (
             <span
-              className="inline-flex items-center rounded-full border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent"
-              title="Linked to a subscription"
+              className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent max-w-[110px] shrink-0"
+              title={linkedSub ? `Payment for ${linkedSub.name}` : 'Linked to a subscription'}
             >
-              🔁
+              🔁{linkedSub && <span className="truncate">{linkedSub.name}</span>}
             </span>
           )}
           <span className="text-[11px] text-foreground-subtle">
