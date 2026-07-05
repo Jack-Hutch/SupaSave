@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { useToastState, type Toast } from '../../hooks/useToast';
 
@@ -30,7 +30,6 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
       layout
       initial={{ opacity: 0, y: -20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95, y: -10 }}
       transition={{ duration: 0.2 }}
       className={`flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-sm min-w-[280px] max-w-[380px] ${colors[toast.type]}`}
     >
@@ -56,11 +55,13 @@ export function ToastProvider() {
       aria-atomic="false"
       className="fixed top-4 right-4 z-[100] flex flex-col gap-2"
     >
-      <AnimatePresence mode="popLayout">
-        {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onRemove={removeToast} />
-        ))}
-      </AnimatePresence>
+      {/* No AnimatePresence — presence-managed exits could wedge under
+          StrictMode in dev, leaving dismissed toasts stuck on screen (and
+          popLayout demanded refs ToastItem didn't forward). Enter animation
+          + layout restack keep it smooth; dismissal is instant. */}
+      {toasts.map((t) => (
+        <ToastItem key={t.id} toast={t} onRemove={removeToast} />
+      ))}
     </div>
   );
 }

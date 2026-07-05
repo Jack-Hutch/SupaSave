@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ChevronDown, ArrowLeftRight, CreditCard, Banknote, Tag, Trash2, X } from 'lucide-react';
 import type { Transaction, TransactionFilters, CategoryDef } from '../../types';
 import { getCategoryBadgeClass, getAllCategories } from '../../lib/categories';
@@ -244,7 +244,6 @@ function BulkBar({ count, onClearSelection, onBulkCategory, onBulkDelete, custom
       <motion.div
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
         transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
         className="flex items-center gap-3 mb-3 px-4 py-2.5 rounded-xl text-[12.5px]"
         style={{
@@ -426,18 +425,18 @@ export function TransactionList({
 
   return (
     <div>
-      {/* ── Bulk action bar (shown when rows are selected) ── */}
-      <AnimatePresence>
-        {selectable && hasSelection && (
-          <BulkBar
-            count={selectedIds.size}
-            onClearSelection={deselectAll}
-            onBulkCategory={onBulkCategoryChange ? handleBulkCategory : undefined}
-            onBulkDelete={onBulkDelete ? handleBulkDelete : undefined}
-            customCategories={customCategories}
-          />
-        )}
-      </AnimatePresence>
+      {/* ── Bulk action bar (shown when rows are selected) ──
+          No AnimatePresence: a wedged exit (StrictMode dev) left a stale bar
+          with dead handlers hovering over the list. Enter-only, instant hide. */}
+      {selectable && hasSelection && (
+        <BulkBar
+          count={selectedIds.size}
+          onClearSelection={deselectAll}
+          onBulkCategory={onBulkCategoryChange ? handleBulkCategory : undefined}
+          onBulkDelete={onBulkDelete ? handleBulkDelete : undefined}
+          customCategories={customCategories}
+        />
+      )}
 
       {/* ── Select-all row (shown when selectable, no maxItems) ── */}
       {selectable && paginated.length > 0 && (
@@ -449,10 +448,15 @@ export function TransactionList({
         />
       )}
 
-      {/* mode="popLayout" pulls exiting items out of flow before animating them */}
-      <AnimatePresence initial={false} mode="popLayout">
-        {groups.map(({ key, label, items, net }) => {
-          const isOpen = !collapsed.has(key);
+      {/*
+        No AnimatePresence around groups: mode="popLayout" absolute-positions
+        exiting groups ON TOP of the live list, and a wedged exit (StrictMode
+        dev) left invisible ghost rows intercepting checkbox/badge clicks —
+        the "can't select transactions" bug. Groups keep their enter fade;
+        removal is instant.
+      */}
+      {groups.map(({ key, label, items, net }) => {
+          const isOpen = groupBy === 'date' || !collapsed.has(key);
 
           return (
             <motion.div
@@ -460,7 +464,6 @@ export function TransactionList({
               className="mb-2"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
             >
               {groupBy === 'date' ? (
@@ -476,41 +479,37 @@ export function TransactionList({
                 />
               )}
 
-              <AnimatePresence initial={false}>
-                {(groupBy === 'date' || isOpen) && (
-                  <motion.div
-                    key="rows"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-                    className="overflow-hidden"
-                  >
-                    <div className="space-y-0.5 py-0.5">
-                      {items.map((tx, i) => (
-                        <TransactionItem
-                          key={tx.id}
-                          transaction={tx}
-                          currency={currency}
-                          onEdit={onEdit}
-                          onDelete={onDelete}
-                          onCategoryChange={onCategoryChange}
-                          onAddToSubscription={onAddToSubscription}
-                          index={i}
-                          customCategories={customCategories}
-                          selectable={selectable}
-                          selected={selectedIds.has(tx.id)}
-                          onSelect={() => toggleSelect(tx.id)}
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Collapse driven by `animate` on an always-mounted div — the
+                  presence-managed version could wedge at height 0 */}
+              <motion.div
+                initial={false}
+                animate={isOpen ? { opacity: 1, height: 'auto' } : { opacity: 0, height: 0 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                className="overflow-hidden"
+                aria-hidden={!isOpen}
+              >
+                <div className="space-y-0.5 py-0.5">
+                  {items.map((tx, i) => (
+                    <TransactionItem
+                      key={tx.id}
+                      transaction={tx}
+                      currency={currency}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onCategoryChange={onCategoryChange}
+                      onAddToSubscription={onAddToSubscription}
+                      index={i}
+                      customCategories={customCategories}
+                      selectable={selectable}
+                      selected={selectedIds.has(tx.id)}
+                      onSelect={() => toggleSelect(tx.id)}
+                    />
+                  ))}
+                </div>
+              </motion.div>
             </motion.div>
           );
         })}
-      </AnimatePresence>
 
       {hasMore && (
         <motion.div className="mt-4 flex justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

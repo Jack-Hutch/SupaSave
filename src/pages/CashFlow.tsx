@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useDeferredValue } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
@@ -98,18 +98,16 @@ export function CashFlow() {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={periodLabel}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.15, ease: 'easeOut' }}
-                className="text-sm font-medium text-foreground min-w-[120px] text-center"
-              >
-                {periodLabel}
-              </motion.span>
-            </AnimatePresence>
+            {/* Keyed remount, enter-only — mode="wait" wedges under StrictMode in dev */}
+            <motion.span
+              key={periodLabel}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              className="text-sm font-medium text-foreground min-w-[120px] text-center"
+            >
+              {periodLabel}
+            </motion.span>
             <button
               onClick={() => setOffset((o) => Math.min(o + 1, 0))}
               disabled={offset === 0}

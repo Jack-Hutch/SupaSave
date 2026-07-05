@@ -84,8 +84,20 @@ src/
 ### Subscription-transaction linking
 - Transactions linked via `tags: string[]` using `sub-link:<membershipId>` prefix
 - Helpers in `subscriptionUtils.ts`: `addSubLink`, `getSubLinkId`, `isLinkedToSubscription`, `isLinkedTo`
-- `findRenewalCandidates(transactions, membership)` — matches on name + amount ±10%
-- `advanceByOneCycle(date, cycle)` — advances a date string by one billing period
+- `normalizeMerchant(raw)` — strips processor noise ("SQ *", "DIRECT DEBIT", ref codes) for matching
+- `findRenewalCandidates(transactions, membership)` — matches on normalised name (substring OR shared ≥4-char token) + amount ±15%
+- `advanceByOneCycle(date, cycle)` — advances a date string by exactly one billing period (building block)
+- `advanceBillingDate(currentNextDate, cycle, paidDate?)` — advances forward until strictly after the payment date, so a long-overdue subscription doesn't stay "overdue" after being paid. Use this (not `advanceByOneCycle`) when logging payments / confirming renewals.
+- "Log payment" button on each `SubRow` writes a manual `sub-link`-tagged transaction and advances via `advanceBillingDate` — for charges the bank hasn't picked up yet.
+
+### App stability & performance
+- **Single auth source**: `AuthProvider` (in `hooks/useAuth.tsx`) owns the one `getSession()` + `onAuthStateChange` subscription. `useAuth()` is now a cheap context read — do NOT reintroduce per-component session listeners.
+- **ErrorBoundary** (`components/ErrorBoundary.tsx`): wraps the whole app AND each page (in `AppShell`, keyed by route). A render error shows a recovery card instead of unmounting the tree to a black screen. Page-level boundary keeps sidebar/header alive.
+- **Code splitting**: pages are `React.lazy` in `App.tsx` behind a `<Suspense>` loader; vendor libs (recharts/framer-motion/supabase/date-fns) split via `manualChunks` in `vite.config.ts`. Keep new heavy pages lazy.
+
+### Command palette (⌘K)
+- `components/CommandPalette.tsx` — global ⌘K/Ctrl+K (listener in `Header.tsx`), also opens from the Header search box.
+- Provides page navigation, live transaction search, and quick actions (add, sync, theme, sign out). Fully keyboard driven (↑/↓/Enter/Esc).
 
 ### Up Bank token
 - Dev: `getUpToken()` reads `VITE_UP_API_TOKEN` from env (never stored in DB)
@@ -115,6 +127,10 @@ src/
 | Spring bounce on expand/collapse | Springs overshoot `height: 0` | Use `duration: 0.22, ease: [0.32,0.72,0,1]` tween |
 | DonutChart wrong colours | Recharts needs hex; system uses Tailwind class names | Use `getCategoryHex()` → `COLOR_HEX` map in `categories.ts` |
 | Supabase error message hidden | `PostgrestError` not `instanceof Error` | Use `(err as {message?:string})?.message` |
+| App goes black / blank on error | A thrown render error unmounts the whole tree (dark body) | `ErrorBoundary` wraps app + each page; never remove it |
+| Subscription stuck "overdue" after paying | Advancing only one cycle leaves a long-overdue date in the past | Use `advanceBillingDate` (rolls forward until future), or the Log-payment button |
+| Bank charge won't link to a subscription | Raw substring match fails on processor-prefixed descriptions | `findRenewalCandidates` now normalises merchant names + 15% tolerance |
+| Slow first load / big bundle | Everything in one chunk incl. recharts | Pages are `React.lazy`; vendor `manualChunks` in `vite.config.ts` |
 
 ---
 

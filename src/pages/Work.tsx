@@ -259,8 +259,8 @@ function ShiftRow({ shift, currency, onEdit, onDelete, onTogglePaid, toggling }:
         {formatCurrency(shift.pay_owed, currency)}
       </p>
 
-      {/* Actions — hover reveal */}
-      <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions — always visible (works on touch) */}
+      <div className="flex items-center gap-1.5 justify-end">
         <button
           onClick={() => onEdit(shift)}
           className="p-1.5 rounded-md text-foreground-subtle hover:bg-surface hover:text-foreground transition-colors"

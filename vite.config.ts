@@ -65,9 +65,32 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        /*
+          Split heavy third-party libraries into their own long-lived chunks.
+          Recharts and Framer Motion are large and change rarely, so isolating
+          them means the browser caches them across deploys and the main app
+          chunk stays small. Combined with route-level lazy loading, the chart
+          code only downloads when a charting page is actually visited.
+        */
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          motion: ['framer-motion'],
+          supabase: ['@supabase/supabase-js'],
+          dates: ['date-fns'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/setup.ts'],
+    // Stale agent worktrees under .claude/ contain full repo copies —
+    // without this exclude every suite runs once per copy.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
   },
 });

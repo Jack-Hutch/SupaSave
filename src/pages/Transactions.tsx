@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { format, addMonths } from 'date-fns';
 import { Plus, Search, X, Filter, Settings2 } from 'lucide-react';
 import { useFinanceStore } from '../store/financeStore';
@@ -433,14 +433,14 @@ export function Transactions() {
       </div>
 
       {/* ── Date / source filter panel ───────────────────────────────── */}
-      <AnimatePresence initial={false}>
-        {showDateSource && (
+      {/* Always mounted, driven by `animate` — presence-managed collapse
+          could wedge at height 0 under StrictMode in dev */}
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={false}
+            animate={showDateSource ? { opacity: 1, height: 'auto' } : { opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
+            aria-hidden={!showDateSource}
           >
             <div className="rounded-xl border border-border-base bg-surface p-3 space-y-3">
               <div className="flex items-center justify-between">
@@ -485,8 +485,6 @@ export function Transactions() {
               </div>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Count + group-by toggle ──────────────────────────────────── */}
       <div className="flex items-center justify-between">

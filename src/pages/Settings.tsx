@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
   Trash2, Plus, X, Bell, BellOff, Target, ShieldAlert,
@@ -627,12 +627,12 @@ export function Settings() {
             exiting panel temporarily occupied space while translating out,
             producing a visible height jank. Opacity-only is instant and clean.
           */}
-          <AnimatePresence mode="wait" initial={false}>
+          {/* Keyed remount, enter-only — AnimatePresence mode="wait" wedges under
+              React StrictMode in dev, freezing the panel on its first value. */}
             <motion.div
               key={section}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1, transition: { duration: 0.15, ease: 'easeOut' } }}
-              exit={{ opacity: 0, transition: { duration: 0.1, ease: 'easeIn' } }}
             >
               <Card>
                 <CardHeader>
@@ -685,7 +685,6 @@ export function Settings() {
                 )}
               </Card>
             </motion.div>
-          </AnimatePresence>
         </div>
       </div>
 

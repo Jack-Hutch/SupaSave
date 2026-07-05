@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { LogOut, User, Link as LinkIcon, Settings, Bell, Plus, Search } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth, signOut } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
+import { CommandPalette } from '../CommandPalette';
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -22,9 +23,22 @@ export function Header() {
   const { user } = useAuth();
   const { error: toastError } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const reducedMotion = useReducedMotion() ?? false;
 
   const pageTitle = pageTitles[location.pathname] || 'SupaSave';
+
+  // Global ⌘K / Ctrl+K toggles the command palette.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -42,32 +56,37 @@ export function Header() {
       <div className="flex items-center gap-2 text-[13px] text-foreground-muted">
         <span>SupaSave</span>
         <span className="text-foreground-subtle">/</span>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={pageTitle}
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-            animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-            transition={reducedMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="font-medium text-foreground"
-          >
-            {pageTitle}
-          </motion.span>
-        </AnimatePresence>
+        {/*
+          Keyed remount, enter-only. AnimatePresence mode="wait" wedges under
+          React StrictMode in dev — the old child's exit never resolves, so
+          the new title never mounts and the breadcrumb sticks to the first
+          page you loaded. An enter animation on remount reads the same.
+        */}
+        <motion.span
+          key={pageTitle}
+          initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reducedMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+          className="font-medium text-foreground"
+        >
+          {pageTitle}
+        </motion.span>
       </div>
 
-      {/* Global search */}
-      <div
-        className="flex items-center gap-2 h-8 px-3 rounded-lg text-[13px] text-foreground-subtle cursor-text transition-colors"
+      {/* Global search — opens the command palette */}
+      <button
+        type="button"
+        className="hidden md:flex items-center gap-2 h-8 px-3 rounded-lg text-[13px] text-foreground-subtle cursor-text transition-colors hover:border-accent/40"
         style={{
           width: 300,
           background: 'rgb(var(--surface))',
           border: '1px solid rgb(var(--border-default))',
         }}
-        onClick={() => {/* could open a search modal */}}
+        onClick={() => setCmdOpen(true)}
+        aria-label="Open command palette"
       >
         <Search className="h-3.5 w-3.5 shrink-0" />
-        <span className="flex-1 text-foreground-subtle text-[13px]">Search transactions…</span>
+        <span className="flex-1 text-left text-foreground-subtle text-[13px]">Search transactions…</span>
         <span
           className="font-mono text-[10.5px] rounded px-1.5 py-0.5"
           style={{
@@ -78,7 +97,7 @@ export function Header() {
         >
           ⌘K
         </span>
-      </div>
+      </button>
 
       {/* Right actions */}
       <div className="ml-auto flex items-center gap-2">
@@ -123,7 +142,8 @@ export function Header() {
               </span>
             </motion.button>
 
-            <AnimatePresence>
+            {/* No AnimatePresence — a wedged exit (StrictMode dev) would leave
+                the invisible outside-click layer blocking the page. */}
               {menuOpen && (
                 <>
                   <div
@@ -134,7 +154,6 @@ export function Header() {
                   <motion.div
                     initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.93, y: -8 }}
                     animate={reducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-                    exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.93, y: -8 }}
                     transition={
                       reducedMotion
                         ? { duration: 0 }
@@ -176,10 +195,11 @@ export function Header() {
                   </motion.div>
                 </>
               )}
-            </AnimatePresence>
           </div>
         )}
       </div>
+
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
     </header>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Search, X } from 'lucide-react';
 import { getAllCategories, COLOR_CLASSES } from '../../lib/categories';
 import type { CategoryDef } from '../../types';
@@ -85,9 +85,9 @@ export function CategoryPickerPopover({
     return () => document.removeEventListener('keydown', handler, true);
   }, [isOpen, onClose]);
 
-  const content = (
-    <AnimatePresence>
-      {isOpen && (
+  // No AnimatePresence — a wedged exit (StrictMode dev) would leave the
+  // invisible z-40 outside-click layer silently blocking the whole page.
+  const content = !isOpen ? null : (
         <>
           {/* Invisible full-screen layer — closes on outside tap (mobile-safe) */}
           <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
@@ -98,7 +98,6 @@ export function CategoryPickerPopover({
             style={{ top: pos.top, left: pos.left, width: POPOVER_W }}
             initial={{ opacity: 0, scale: 0.95, y: -6 }}
             animate={{ opacity: 1, scale: 1,    y: 0  }}
-            exit={{    opacity: 0, scale: 0.95, y: -6 }}
             transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
           >
             {/* Search */}
@@ -152,8 +151,6 @@ export function CategoryPickerPopover({
             </div>
           </motion.div>
         </>
-      )}
-    </AnimatePresence>
   );
 
   // Portal to document.body — the popover is completely outside the row's DOM tree,

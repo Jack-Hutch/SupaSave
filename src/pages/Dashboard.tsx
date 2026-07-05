@@ -33,7 +33,7 @@ const item = {
 };
 
 export function Dashboard() {
-  useAuth(); // keep auth context hydrated
+  useAuth(); // subscribe to shared auth context (AuthProvider owns the session)
   const navigate = useNavigate();
   const transactions = useFinanceStore((s) => s.transactions);
   const budgets = useFinanceStore((s) => s.budgets);

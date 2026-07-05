@@ -1,9 +1,24 @@
-import React from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useLocation, useOutlet } from 'react-router-dom';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { Header } from './Header';
+import { ErrorBoundary } from '../ErrorBoundary';
+
+/*
+  <Outlet /> always renders the CURRENT route's element — so during a page
+  transition the exiting motion.div (keyed by the old pathname) would render
+  the NEW page too, showing two copies of it side by side. Freezing the
+  outlet element in state at mount pins each keyed wrapper to the page it
+  was created for: the exiting div keeps the old page, the entering div
+  shows the new one.
+*/
+function FrozenOutlet(): React.ReactElement | null {
+  const outlet = useOutlet();
+  const [frozen] = useState(outlet);
+  return frozen;
+}
 
 const AMBIENT: Record<string, { x: number; y: number }> = {
   '/':              { x: 15, y: 25 },
@@ -120,7 +135,16 @@ export function AppShell() {
                 exit="exit"
                 style={{ willChange: 'opacity' }}
               >
-                <Outlet />
+                {/*
+                  Page-level boundary, keyed by route so it auto-resets on
+                  navigation. A crash in one page shows the recovery UI inside
+                  the shell — the sidebar, header and nav stay alive, so the
+                  user can move to another page instead of the whole app
+                  blanking to black.
+                */}
+                <ErrorBoundary scope={`page:${location.pathname}`} key={location.pathname}>
+                  <FrozenOutlet />
+                </ErrorBoundary>
               </motion.div>
             </AnimatePresence>
           </LayoutGroup>

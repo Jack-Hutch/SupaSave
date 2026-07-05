@@ -68,7 +68,11 @@ export function Sidebar() {
 
   return (
     <aside
-      className="hidden lg:flex flex-col w-60 shrink-0 border-r border-border-base min-h-screen"
+      // sticky + h-screen + self-start: the page scrolls at the document level,
+      // so without this the sidebar was a static column whose nav scrolled up
+      // out of view on any long page. self-start stops flexbox stretching it to
+      // full document height (a stretched child has nowhere to "stick").
+      className="hidden lg:flex flex-col w-60 shrink-0 border-r border-border-base sticky top-0 h-screen self-start"
       style={{ background: 'rgb(var(--surface-sunken))' }}
     >
       {/* Brand */}

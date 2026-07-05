@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useDeferredValue } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useFinanceStore } from '../store/financeStore';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { DonutChart } from '../components/charts/DonutChart';
@@ -114,12 +114,12 @@ export function Analytics() {
         Analytics page. This is an INTRA-page transition (within Analytics),
         separate from the cross-page transitions handled by layoutId.
       */}
-      <AnimatePresence mode="wait" initial={false}>
+      {/* Keyed remount, enter-only — AnimatePresence mode="wait" wedges under
+          React StrictMode in dev, freezing the tab on its first value. */}
         <motion.div
           key={tab}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           className="space-y-5"
         >
@@ -317,7 +317,6 @@ export function Analytics() {
             </div>
           )}
         </motion.div>
-      </AnimatePresence>
 
     </div>
   );

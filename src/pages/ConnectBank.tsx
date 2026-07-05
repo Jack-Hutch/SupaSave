@@ -1,5 +1,5 @@
 import React, { useState, useTransition } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Link2, Link2Off, CheckCircle, RefreshCw,
   Eye, EyeOff, ArrowLeft, AlertTriangle, Database, Zap,
@@ -186,7 +186,8 @@ export function ConnectBank() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 lg:px-6 space-y-4">
 
-      <AnimatePresence mode="wait" initial={false}>
+      {/* Conditional views, enter-only — AnimatePresence mode="wait" wedges under
+          React StrictMode in dev; the token form would never appear. */}
 
         {/* ── Option picker ── */}
         {!configuring && (
@@ -194,7 +195,6 @@ export function ConnectBank() {
             key="pick"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: 0.15 } }}
-            exit={{ opacity: 0, transition: { duration: 0.1 } }}
             className="space-y-3"
           >
             <div className="mb-5">
@@ -289,7 +289,6 @@ export function ConnectBank() {
             key="up-form"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: 0.15 } }}
-            exit={{ opacity: 0, transition: { duration: 0.1 } }}
             className="space-y-4"
           >
             <button
@@ -349,7 +348,6 @@ export function ConnectBank() {
           </motion.div>
         )}
 
-      </AnimatePresence>
     </div>
   );
 }
