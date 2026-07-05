@@ -15,17 +15,15 @@ import type {
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const supabase = getSupabase();
+  // maybeSingle: zero rows is a normal state, not a 406 error like .single()
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
-  if (error) {
-    if (error.code === 'PGRST116') return null; // Not found
-    throw error;
-  }
-  return data as unknown as Profile;
+  if (error) throw error;
+  return (data as unknown as Profile) ?? null;
 }
 
 export async function upsertProfile(
@@ -110,7 +108,7 @@ export async function fetchTransactions(
 }
 
 export async function insertTransaction(
-  tx: Omit<Transaction, 'id' | 'updated_at'>
+  tx: Omit<Transaction, 'id' | 'updated_at'> & { id?: string }
 ): Promise<Transaction> {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -194,7 +192,7 @@ export async function fetchMemberships(userId: string): Promise<Membership[]> {
 }
 
 export async function insertMembership(
-  membership: Omit<Membership, 'id' | 'updated_at'>
+  membership: Omit<Membership, 'id' | 'updated_at'> & { id?: string }
 ): Promise<Membership> {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -213,13 +211,19 @@ export async function updateMembership(
   updates: Partial<Membership>
 ): Promise<void> {
   const supabase = getSupabase();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('memberships')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('id');
 
   if (error) throw error;
+  // Supabase reports success even when the filter matched no rows — which
+  // silently swallowed writes against stale/ghost membership ids. Surface it.
+  if (!data || data.length === 0) {
+    throw new Error('Subscription not found — refresh the page and try again');
+  }
 }
 
 export async function deleteMembership(
@@ -253,17 +257,15 @@ export async function fetchBankConnection(
   userId: string
 ): Promise<BankConnection | null> {
   const supabase = getSupabase();
+  // maybeSingle: zero rows is a normal state, not a 406 error like .single()
   const { data, error } = await supabase
     .from('bank_connections')
     .select('*')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
-  if (error) {
-    if (error.code === 'PGRST116') return null;
-    throw error;
-  }
-  return data as unknown as BankConnection;
+  if (error) throw error;
+  return (data as unknown as BankConnection) ?? null;
 }
 
 export async function upsertBankConnection(
@@ -303,7 +305,7 @@ export async function fetchWorkShifts(userId: string): Promise<WorkShift[]> {
 }
 
 export async function insertWorkShift(
-  shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>
+  shift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'> & { id?: string }
 ): Promise<WorkShift> {
   const supabase = getSupabase();
   const now = new Date().toISOString();

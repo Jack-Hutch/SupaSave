@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import { getMerchantStats } from '../utils/analyticsUtils';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { clearUpToken } from '../lib/upTokenSession';
 import { applyTheme as applyThemeConfig } from '../lib/theme';
 import * as financeService from '../services/financeService';
 import { getProvider } from '../providers';
@@ -69,7 +70,7 @@ interface FinanceActions {
   syncBankTransactions(): Promise<void>;
 
   // Transactions
-  addTransaction(tx: Omit<Transaction, 'id' | 'updated_at'>): Promise<void>;
+  addTransaction(tx: Omit<Transaction, 'id' | 'updated_at'>): Promise<string>;
   updateTransaction(id: string, updates: Partial<Transaction>, options?: { silent?: boolean }): Promise<void>;
   deleteTransaction(id: string): Promise<void>;
 
@@ -173,12 +174,16 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       }
       await get().fetchFinanceData(userId);
     } catch (err) {
+      if (get().userId !== userId) return; // stale hydrate — a newer session owns the store
       const message = (err as { message?: string })?.message ?? 'Failed to load data';
       set({ error: message, loading: false });
     }
   },
 
   resetToGuest: () => {
+    // Never let one user's Up Bank token survive into the next session on
+    // a shared device — the provider falls back to getUpToken() on connect.
+    clearUpToken();
     set({
       accounts: [],
       transactions: [],
@@ -210,6 +215,12 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
           financeService.fetchWorkShifts(userId),
         ]);
 
+      // Discard stale results: if the signed-in user changed while these
+      // queries were in flight (sign-out / different sign-in on a shared
+      // device), committing them would put user A's financial data — and
+      // A's Up Bank token below — into user B's session.
+      if (get().userId !== userId) return;
+
       const merchants = getMerchantStats(transactions);
 
       // If no profile exists yet (user pre-dates the migration or signup trigger
@@ -226,6 +237,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       // have to re-enter it after a page refresh.
       if (bankConnection?.provider === 'up' && bankConnection.payload?.upToken) {
         const { setUpToken } = await import('../lib/upTokenSession');
+        if (get().userId !== userId) return; // re-check after the await
         try {
           setUpToken(bankConnection.payload.upToken as string);
         } catch {
@@ -250,6 +262,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
         applyTheme({ ...defaultSettings, ...profile.settings });
       }
     } catch (err) {
+      if (get().userId !== userId) return; // stale failure — not this session's problem
       const message = (err as { message?: string })?.message ?? 'Failed to load data';
       set({ error: message, loading: false });
       throw err;
@@ -352,7 +365,33 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
         })
       );
 
-      const merchants = getMerchantStats(allTransactions);
+      // Merge synced rows into existing state instead of replacing it.
+      // Replacing dropped every manual transaction (logged subscription
+      // payments) and anything older than the 3-month sync window, and
+      // re-upserting bank rows with fresh `tags: []` wiped sub-link tags
+      // in the DB — so payment history vanished on every sync.
+      const existing = get().transactions;
+      const existingById = new Map(existing.map((t) => [t.id, t]));
+
+      const synced = allTransactions.map((tx) => {
+        const prev = existingById.get(tx.id);
+        if (!prev) return tx;
+        // User-curated fields survive a re-sync
+        return {
+          ...tx,
+          tags: prev.tags && prev.tags.length > 0 ? prev.tags : tx.tags,
+          category: prev.category !== 'Uncategorized' ? prev.category : tx.category,
+          notes: prev.notes ?? tx.notes,
+        };
+      });
+
+      const syncedIds = new Set(synced.map((t) => t.id));
+      const kept = existing.filter((t) => !syncedIds.has(t.id));
+      const mergedTransactions = [...synced, ...kept].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      const merchants = getMerchantStats(mergedTransactions);
       const updatedConnection: BankConnection = {
         ...bankConnection,
         last_sync_at: new Date().toISOString(),
@@ -361,7 +400,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
 
       // Optimistic update first — UI feels instant, spinner disappears immediately.
       set({
-        transactions: allTransactions,
+        transactions: mergedTransactions,
         merchants,
         accounts: updatedAccounts,
         bankConnection: updatedConnection,
@@ -380,7 +419,7 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
       if (isSupabaseConfigured) {
         try {
           await Promise.all([
-            financeService.upsertTransactions(allTransactions),
+            financeService.upsertTransactions(synced),
             financeService.upsertAccounts(updatedAccounts),
             financeService.upsertBankConnection(updatedConnection),
           ]);
@@ -414,8 +453,13 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
 
     if (isSupabaseConfigured) {
       try {
+        // Insert WITH the client-generated id. Letting the DB mint a new id
+        // and swapping it in afterwards changed the row's identity mid-flight:
+        // list keys churned (AnimatePresence ghost rows) and anything holding
+        // the old id (sub-link tags, follow-up updates) silently missed.
         const saved = await financeService.insertTransaction({
           ...txData,
+          id: newTx.id,
           user_id: userId,
         });
         // Replace optimistic with server version
@@ -424,12 +468,15 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
             tx.id === newTx.id ? saved : tx
           ),
         }));
+        return saved.id;
       } catch (err) {
         // Rollback
         set({ transactions });
         throw err;
       }
     }
+
+    return newTx.id;
   },
 
   updateTransaction: async (id, updates, { silent = false } = {}) => {
@@ -494,7 +541,8 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
 
     if (isSupabaseConfigured) {
       try {
-        const saved = await financeService.insertMembership({ ...mData, user_id: userId });
+        // Insert WITH the client id — see addTransaction for why.
+        const saved = await financeService.insertMembership({ ...mData, id: newM.id, user_id: userId });
         set((state) => ({
           memberships: state.memberships.map((m) => (m.id === newM.id ? saved : m)),
         }));
@@ -634,7 +682,8 @@ export const useFinanceStore = create<FinanceState & FinanceActions>((set, get) 
 
     if (isSupabaseConfigured) {
       try {
-        const saved = await financeService.insertWorkShift({ ...shiftData, user_id: userId });
+        // Insert WITH the client id — see addTransaction for why.
+        const saved = await financeService.insertWorkShift({ ...shiftData, id: optimistic.id, user_id: userId });
         set((state) => ({
           workShifts: state.workShifts.map((s) => (s.id === optimistic.id ? saved : s)),
         }));
